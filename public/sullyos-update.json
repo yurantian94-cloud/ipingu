@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "versionCode": 30501,
+  "versionName": "3.5.1",
+  "apkUrl": "https://github.com/qegj567-cloud/SullyOS/releases/download/android-v3.5.1/SullyOS-Android-v3.5.1.apk",
+  "sha256": "e7053d4d3a88dd440142d191c7905425a601fe28e55df9c77b0a36d2712432d2",
+  "sizeBytes": 45878814,
+  "publishedAt": "2026-09-12T10:35:17Z",
+  "releaseNotes": [
+    "群聊接入输入偏好与表情建议，并保留自定义编辑器样式",
+    "Kanata 活动重新分组，支持自动排除配置",
+    "Kanata 图书馆支持分类整理与按分类阅读",
+    "修正 SAR 子页面在 iOS 与移动端安全区的布局",
+    "延续主动消息 2.0、UnifiedPush / ntfy、Android PDF 导入、Umami、应用内更新与 DirectoryExists 修复"
+  ]
+}

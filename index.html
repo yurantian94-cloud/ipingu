@@ -1,0 +1,626 @@
+
+
+
+<!DOCTYPE html>
+<html lang="zh-CN" translate="no">
+  <head>
+    <meta charset="utf-8" />
+    <!-- 关掉浏览器自动翻译：SullyOS 本身就是中文 App，翻译纯属添乱（甚至「中译中」），
+         还会改动 React 托管的 DOM 触发 insertBefore/removeChild 白屏。translate="no" + 这两个 meta
+         覆盖 Chrome/Edge/三星 等主流浏览器。utils/translateCrashGuard 作为兜底护栏仍保留。 -->
+    <meta name="google" content="notranslate" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="application-name" content="SullyOS·糯米机" />
+    <title>SullyOS·糯米机</title>
+    
+    <!-- PWA Settings -->
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0f1115" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="SullyOS·糯米机" />
+    
+    <!-- Updated Icons -->
+    <link rel="icon" type="image/png" href="./icons/jellyfish-192.png?v=38b1adde1d" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./icons/jellyfish-180.png?v=38b1adde1d" />
+
+    <!-- KaTeX CSS for Math Rendering -->
+    <link rel="stylesheet" href="https://unpkg.com/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0tAv4ct0nTaAbDJwPJzDEaqSD1odI+WdtXRGWt2kTvGFasHpSy3SV" crossorigin="anonymous">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600&family=Nunito:wght@400;500;600;700;800;900&family=Noto+Sans+SC:wght@400;500;700;900&family=Space+Grotesk:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&family=Caveat:wght@400;500;600;700&family=Shippori+Mincho:wght@400;500;600;700&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Ma+Shan+Zheng&family=Long+Cang&family=ZCOOL+KuaiLe&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['var(--app-font)', 'sans-serif'],
+            },
+            colors: {
+              primary: 'hsl(var(--primary-hue), var(--primary-sat), var(--primary-lightness))', 
+              'primary-focus': 'hsl(var(--primary-hue), var(--primary-sat), calc(var(--primary-lightness) - 10%))',
+              'primary-light': 'hsl(var(--primary-hue), var(--primary-sat), 92%)',
+              surface: 'rgba(255, 255, 255, 0.75)',
+              'surface-glass': 'rgba(255, 255, 255, 0.35)',
+            },
+            animation: {
+              'fade-in': 'fadeIn 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
+              'slide-up': 'slideUp 0.35s cubic-bezier(0.25, 1, 0.5, 1)',
+              'slide-down': 'slideDown 0.35s cubic-bezier(0.25, 1, 0.5, 1)',
+              'pop-in': 'popIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+              'float-up': 'floatUp 3s ease-out forwards',
+              'wiggle': 'wiggle 0.5s ease-in-out infinite',
+              'bounce-slow': 'bounceSlow 2s ease-in-out infinite',
+              'float': 'floatDrift 4s ease-in-out infinite alternate',
+              'glow-pulse': 'glowPulse 3s ease-in-out infinite',
+              'shimmer': 'shimmer 2.5s ease-in-out infinite',
+              'dot-pulse': 'dotPulse 1.2s ease-in-out infinite',
+              'app-open': 'appOpen 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+              'notif-pop': 'notifPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
+            },
+            keyframes: {
+              fadeIn: {
+                '0%': { opacity: '0', transform: 'scale(0.97) translateY(4px)' },
+                '100%': { opacity: '1', transform: 'scale(1) translateY(0)' },
+              },
+              slideUp: {
+                '0%': { transform: 'translateY(100%)', opacity: '0' },
+                '100%': { transform: 'translateY(0)', opacity: '1' },
+              },
+              slideDown: {
+                '0%': { transform: 'translateY(-100%)', opacity: '0' },
+                '100%': { transform: 'translateY(0)', opacity: '1' },
+              },
+              popIn: {
+                '0%': { opacity: '0', transform: 'scale(0.5)' },
+                '60%': { transform: 'scale(1.05)' },
+                '100%': { opacity: '1', transform: 'scale(1)' },
+              },
+              floatUp: {
+                '0%': { opacity: '1', transform: 'translateY(100vh) scale(1)' },
+                '50%': { opacity: '1' },
+                '100%': { opacity: '0', transform: 'translateY(-50px) scale(1.5)' },
+              },
+              wiggle: {
+                '0%, 100%': { transform: 'translate(-50%, -100%) rotate(-3deg)' },
+                '50%': { transform: 'translate(-50%, -100%) rotate(3deg)' },
+              },
+              bounceSlow: {
+                '0%, 100%': { transform: 'translateY(0)' },
+                '50%': { transform: 'translateY(-10px)' },
+              },
+              floatDrift: {
+                '0%': { transform: 'translateY(0) scale(1)', opacity: '0.3' },
+                '100%': { transform: 'translateY(-30px) scale(1.1)', opacity: '0.6' },
+              },
+              glowPulse: {
+                '0%, 100%': { boxShadow: '0 0 15px rgba(139, 92, 246, 0.15)' },
+                '50%': { boxShadow: '0 0 25px rgba(139, 92, 246, 0.3)' },
+              },
+              shimmer: {
+                '0%': { backgroundPosition: '-200% 0' },
+                '100%': { backgroundPosition: '200% 0' },
+              },
+              dotPulse: {
+                '0%, 80%, 100%': { opacity: '0.3', transform: 'scale(0.8)' },
+                '40%': { opacity: '1', transform: 'scale(1.1)' },
+              },
+              appOpen: {
+                '0%': { opacity: '0', transform: 'translateY(8%) scale(0.95)' },
+                '100%': { opacity: '1', transform: 'translateY(0) scale(1)' },
+              },
+              notifPop: {
+                '0%': { opacity: '0', transform: 'translateY(-130%)' },
+                '70%': { opacity: '1', transform: 'translateY(6%)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' },
+              },
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      :root {
+        --primary-hue: 245; 
+        --primary-sat: 25%;
+        --primary-lightness: 65%;
+        /* 安全区单一来源：原生 env 与 JS 探测值 --standalone-safe-area-*（见 utils/iosStandalone.ts）取大，
+           iOS 全屏 PWA 下原生 env 偶发返回 0 时由探测值兜底。新增 App 一律引用这三个变量。 */
+        --safe-top: max(env(safe-area-inset-top, 0px), var(--standalone-safe-area-top, 0px));
+        --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--standalone-safe-area-bottom, 0px));
+        /* 全屏界面顶栏让开「安全区 + SullyOS 顶部状态栏(时间/电量, 约 1.5rem)」；背景仍铺满，只挪控件。 */
+        --chrome-top: calc(var(--safe-top) + 1.5rem);
+        --app-height: 100lvh;
+        --keyboard-inset: 0px;
+        --app-font: 'Quicksand', sans-serif;
+      }
+      /* 动森风格皮肤：拉丁/数字用 Nunito（圆润），中文用 ZCOOL KuaiLe（可爱），保留 Noto Sans SC 兜底。
+         选择 html[data-skin] 而非 :root，优先级更高，能盖过运行时注入的 --app-font。 */
+      html[data-skin="animalcrossing"] {
+        --app-font: 'Nunito', 'ZCOOL KuaiLe', 'Noto Sans SC', sans-serif;
+      }
+      /* 几何圣典：蓝白数学网格、结构线和冷金属文字。所有 App 共用这组变量，
+         再由外观组件的 data-skin 标记开启，切换主题时无需刷新页面。 */
+      html[data-skin="geometry"] {
+        --app-font: 'Space Grotesk', 'Noto Sans SC', sans-serif;
+        --geometry-ink: #123a63;
+        --geometry-blue: #145b97;
+        --geometry-cyan: #70c6e8;
+        --geometry-line: rgba(37, 103, 163, 0.24);
+        --geometry-paper: #eff8ff;
+        --geo-bg: #f5f9fc;
+        --geo-line-main: #0b2545;
+        --geo-line-sub: rgba(11, 37, 69, .15);
+        --geo-accent: #8ea8c3;
+        --geo-ice: #e0eaf5;
+        --geo-text: #0b2545;
+        --geo-font: 'Space Grotesk', 'Courier New', 'Noto Sans SC', sans-serif;
+      }
+      html[data-skin="geometry"] body {
+        background: #dcecf8;
+      }
+      html[data-skin="geometry"] .sully-shell-content {
+        isolation: isolate;
+        background: linear-gradient(180deg, rgba(242,250,255,.96), rgba(220,237,249,.98));
+      }
+      html[data-skin="geometry"] .sully-shell-content::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 0;
+        opacity: .92;
+        background:
+          radial-gradient(circle at 50% 30%, rgba(255,255,255,.95) 0 11%, rgba(255,255,255,.38) 24%, transparent 46%),
+          linear-gradient(32deg, transparent 0 61%, rgba(27, 93, 154, .16) 61.15% 61.36%, transparent 61.55%),
+          linear-gradient(148deg, transparent 0 38%, rgba(27, 93, 154, .12) 38.15% 38.38%, transparent 38.56%),
+          repeating-linear-gradient(90deg, transparent 0 44px, rgba(27, 93, 154, .055) 44px 45px),
+          repeating-linear-gradient(0deg, transparent 0 44px, rgba(27, 93, 154, .04) 44px 45px);
+      }
+      html[data-skin="geometry"] .sully-shell-content::after {
+        content: '';
+        position: absolute;
+        inset: 10px;
+        pointer-events: none;
+        z-index: 0;
+        border: 1px solid rgba(29, 94, 151, .18);
+        clip-path: polygon(0 0, 22% 0, 23% 1px, 77% 1px, 78% 0, 100% 0, 100% 100%, 78% 100%, 77% calc(100% - 1px), 23% calc(100% - 1px), 22% 100%, 0 100%);
+        box-shadow: inset 0 0 0 8px rgba(255,255,255,.16);
+      }
+      html[data-skin="geometry"] .sully-shell-content > * { position: relative; z-index: 1; }
+      html[data-skin="geometry"] input,
+      html[data-skin="geometry"] textarea,
+      html[data-skin="geometry"] select {
+        border-color: rgba(46, 111, 169, .38) !important;
+        background: rgba(255,255,255,.72) !important;
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,.7), 0 4px 16px rgba(24,82,130,.08);
+      }
+      html[data-skin="geometry"] button:focus-visible,
+      html[data-skin="geometry"] input:focus,
+      html[data-skin="geometry"] textarea:focus,
+      html[data-skin="geometry"] select:focus {
+        outline: 2px solid rgba(26, 104, 169, .55);
+        outline-offset: 2px;
+      }
+      html[data-skin="geometry"] *::-webkit-scrollbar-thumb {
+        background: rgba(25, 91, 147, .38);
+      }
+
+      /* 几何圣典桌面：把“蓝图、圣堂、后工业铭牌”叠到现有布局上。 */
+      html[data-skin="geometry"] .geometry-launcher {
+        color: var(--geometry-ink);
+        font-family: var(--geo-font);
+        background:
+          radial-gradient(circle at 50% 34%, rgba(255,255,255,.86) 0 13%, transparent 35%),
+          linear-gradient(122deg, transparent 0 20%, rgba(20,91,151,.08) 20.15% 20.45%, transparent 20.6%),
+          linear-gradient(302deg, transparent 0 70%, rgba(20,91,151,.09) 70.2% 70.5%, transparent 70.7%);
+      }
+      html[data-skin="geometry"] .launcher-container {
+        background-color: var(--geo-bg);
+        background-image:
+          linear-gradient(var(--geo-line-sub) 1px, transparent 1px),
+          linear-gradient(90deg, var(--geo-line-sub) 1px, transparent 1px);
+        background-size: 16px 16px;
+      }
+      html[data-skin="geometry"] .launcher-container::marker { display: none; }
+      html[data-skin="geometry"] .launcher-screen {
+        box-sizing: border-box;
+        min-width: 0;
+      }
+      html[data-skin="geometry"] .launcher-top {
+        min-width: 0;
+      }
+      html[data-skin="geometry"] .launcher-grid {
+        gap: clamp(10px, 3vh, 22px) 15px;
+        min-width: 0;
+      }
+      html[data-skin="geometry"] .launcher-dock {
+        flex-shrink: 0;
+        min-width: 0;
+      }
+      html[data-skin="geometry"] .geometry-launcher::before {
+        content: 'SULLY / SACRED SYSTEM  ·  PLATE 01';
+        position: absolute;
+        top: calc(var(--safe-top) + .35rem);
+        left: 1.5rem;
+        z-index: 4;
+        color: rgba(18,58,99,.58);
+        font: 700 8px/1 'Space Grotesk', sans-serif;
+        letter-spacing: .22em;
+        pointer-events: none;
+      }
+      html[data-skin="geometry"] .geometry-launcher::after {
+        content: '⟐';
+        position: absolute;
+        right: 1.35rem;
+        top: calc(var(--safe-top) + .2rem);
+        z-index: 4;
+        color: rgba(20,91,151,.72);
+        font-size: 22px;
+        line-height: 1;
+        text-shadow: 0 0 16px rgba(112,198,232,.8);
+        pointer-events: none;
+      }
+      html[data-skin="geometry"] .geometry-page:first-child::before {
+        content: 'AXIOM  /  01';
+        position: absolute;
+        top: calc(var(--safe-top) + 1.8rem);
+        right: 1.5rem;
+        color: rgba(18,58,99,.38);
+        font: 700 8px/1 'Space Grotesk', sans-serif;
+        letter-spacing: .18em;
+        writing-mode: vertical-rl;
+        pointer-events: none;
+      }
+      html[data-skin="geometry"] .geometry-page {
+        position: relative;
+      }
+      html[data-skin="geometry"] .geometry-page::after {
+        content: '';
+        position: absolute;
+        inset: 1.05rem .95rem 1.2rem;
+        border: 1px solid rgba(10,36,99,.08);
+        pointer-events: none;
+        z-index: 0;
+        box-shadow: 7px 7px 0 rgba(62,146,204,.055);
+      }
+      html[data-skin="geometry"] .geometry-clock {
+        padding: 1rem 1rem .95rem;
+        margin: 2.3rem -0.35rem .75rem;
+        border: 1px solid rgba(20,91,151,.24);
+        background: linear-gradient(135deg, rgba(255,255,255,.72), rgba(221,240,252,.46));
+        box-shadow: 0 12px 30px rgba(25,84,132,.10), inset 0 1px 0 rgba(255,255,255,.88);
+        clip-path: polygon(0 0, 88% 0, 100% 18%, 100% 100%, 7% 100%, 0 82%);
+      }
+      html[data-skin="geometry"] .geometry-clock::after {
+        content: '◌  FIELD / 210°';
+        position: absolute;
+        right: .8rem;
+        bottom: .65rem;
+        color: rgba(20,91,151,.48);
+        font: 700 7px/1 'Space Grotesk', sans-serif;
+        letter-spacing: .18em;
+      }
+      html[data-skin="geometry"] .geometry-character > div {
+        border-radius: 8px !important;
+        border: 1px solid rgba(20,91,151,.3) !important;
+        background: linear-gradient(135deg, rgba(255,255,255,.78), rgba(214,236,249,.68)) !important;
+        box-shadow: 9px 9px 0 rgba(20,91,151,.08), 0 14px 28px rgba(20,91,151,.13), inset 0 1px 0 rgba(255,255,255,.95) !important;
+        clip-path: polygon(0 0, 96% 0, 100% 16%, 100% 100%, 4% 100%, 0 84%);
+      }
+      html[data-skin="geometry"] .geometry-character > div::before {
+        content: '◈  CORE / ACTIVE';
+        position: absolute;
+        top: .42rem;
+        right: .7rem;
+        z-index: 2;
+        color: rgba(20,91,151,.62);
+        font: 700 7px/1 'Space Grotesk', sans-serif;
+        letter-spacing: .14em;
+      }
+      html[data-skin="geometry"] .geo-card::after {
+        content: '';
+        position: absolute;
+        inset: 3px;
+        border: 1px dashed var(--geo-accent);
+        opacity: .75;
+        pointer-events: none;
+        clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+      }
+      html[data-skin="geometry"] .geo-icon-frame {
+        background: var(--geo-ice) !important;
+        border-color: var(--geo-line-main) !important;
+        border-radius: 0 !important;
+        clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
+      }
+      html[data-skin="geometry"] .geo-icon-frame::before,
+      html[data-skin="geometry"] .geo-icon-frame::after {
+        content: '';
+        position: absolute;
+        width: 7px;
+        height: 7px;
+        pointer-events: none;
+        opacity: .58;
+      }
+      html[data-skin="geometry"] .geo-icon-frame::before {
+        top: 4px;
+        left: 4px;
+        border-top: 1px solid var(--geo-line-main);
+        border-left: 1px solid var(--geo-line-main);
+      }
+      html[data-skin="geometry"] .geo-icon-frame::after {
+        right: 4px;
+        bottom: 4px;
+        border-right: 1px solid var(--geo-line-main);
+        border-bottom: 1px solid var(--geo-line-main);
+      }
+      html[data-skin="geometry"] .geo-label {
+        font-family: var(--geo-font);
+        background: var(--geo-ice);
+        border: 1px solid transparent;
+        padding: 1px 3px;
+      }
+      html[data-skin="geometry"] .geo-label:hover { border-color: var(--geo-line-main); }
+      html[data-skin="geometry"] .geometry-app-grid {
+        padding: .85rem .5rem .6rem;
+        border-top: 1px solid rgba(20,91,151,.24);
+        border-bottom: 1px solid rgba(20,91,151,.18);
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,.32), transparent);
+      }
+      html[data-skin="geometry"] .geometry-app-grid::before {
+        content: 'FUNCTION ARRAY  /  08 MODULES';
+        position: absolute;
+        left: .1rem;
+        top: -.72rem;
+        color: rgba(18,58,99,.48);
+        font: 700 7px/1 'Space Grotesk', sans-serif;
+        letter-spacing: .16em;
+      }
+      html[data-skin="geometry"] .geometry-app-grid > div:nth-child(3n) { transform: translateY(7px) rotate(1deg); }
+      html[data-skin="geometry"] .geometry-app-grid > div:nth-child(4n) { transform: translateY(-5px) rotate(-1deg); }
+      html[data-skin="geometry"] .geometry-dock {
+        border-radius: 6px !important;
+        padding: .7rem .9rem !important;
+        background: linear-gradient(110deg, rgba(9,53,94,.96), rgba(20,91,151,.94) 62%, rgba(39,125,177,.94)) !important;
+        border: 1px solid rgba(145,220,248,.65) !important;
+        box-shadow: 0 12px 28px rgba(8,48,84,.3), inset 0 1px 0 rgba(255,255,255,.26) !important;
+        clip-path: polygon(0 0, 97% 0, 100% 24%, 100% 100%, 3% 100%, 0 76%);
+      }
+      html[data-skin="geometry"] .geometry-dock::before {
+        content: 'NAV / 00';
+        position: absolute;
+        left: .6rem;
+        top: -.78rem;
+        color: rgba(18,58,99,.5);
+        font: 700 7px/1 'Space Grotesk', sans-serif;
+        letter-spacing: .18em;
+      }
+      html[data-skin="geometry"] .geometry-dock button > div {
+        background: rgba(255,255,255,.96) !important;
+        border-color: rgba(145,220,248,.8) !important;
+        box-shadow: 0 4px 12px rgba(3,36,70,.24) !important;
+      }
+      html[data-skin="geometry"] .geometry-dock button > div svg { color: var(--geometry-blue) !important; }
+      html[data-skin="geometry"] .sully-shell-content .bg-white {
+        background-color: rgba(255,255,255,.84) !important;
+      }
+      html[data-skin="geometry"] .sully-shell-content .bg-slate-50,
+      html[data-skin="geometry"] .sully-shell-content .bg-slate-100 {
+        background-color: rgba(231,244,253,.82) !important;
+      }
+      html[data-skin="geometry"] .sully-shell-content .border-slate-100,
+      html[data-skin="geometry"] .sully-shell-content .border-slate-200 {
+        border-color: rgba(45,112,170,.22) !important;
+      }
+      html[data-skin="geometry"] .sully-shell-content .shadow-sm,
+      html[data-skin="geometry"] .sully-shell-content .shadow-md {
+        box-shadow: 0 8px 22px rgba(25,84,132,.10), inset 0 1px 0 rgba(255,255,255,.7) !important;
+      }
+      html[data-skin="geometry"] .sully-shell-content .text-primary,
+      html[data-skin="geometry"] .sully-shell-content .text-blue-500,
+      html[data-skin="geometry"] .sully-shell-content .text-blue-600 {
+        color: var(--geometry-blue) !important;
+      }
+      @media (max-width: 390px) {
+        html[data-skin="geometry"] .geometry-page {
+          padding-left: 1rem !important;
+          padding-right: 1rem !important;
+        }
+        html[data-skin="geometry"] .geometry-clock {
+          margin-left: 0;
+          margin-right: 0;
+          margin-top: 1.65rem;
+          margin-bottom: .5rem;
+          padding: .62rem .7rem .65rem;
+        }
+        html[data-skin="geometry"] .geometry-clock > .flex.items-end {
+          gap: .65rem;
+        }
+        html[data-skin="geometry"] .geometry-clock > .flex.items-end > .relative {
+          min-width: 0;
+          flex: 1 1 auto;
+        }
+        html[data-skin="geometry"] .geometry-clock > .flex.items-end > .relative > div:first-child {
+          font-size: clamp(4.35rem, 20vw, 5.65rem) !important;
+          letter-spacing: -.075em !important;
+          white-space: nowrap;
+        }
+        html[data-skin="geometry"] .geometry-clock > .flex.items-end > .flex.flex-col {
+          width: 3.45rem;
+          flex: 0 0 3.45rem;
+          padding-bottom: .25rem;
+        }
+        html[data-skin="geometry"] .geometry-clock > .flex.items-end > .flex.flex-col > div:first-child {
+          font-size: 8px;
+          letter-spacing: .12em;
+          overflow: hidden;
+          text-overflow: clip;
+          white-space: nowrap;
+        }
+        html[data-skin="geometry"] .geometry-clock::after {
+          right: .55rem;
+          bottom: .42rem;
+          font-size: 6px;
+        }
+        html[data-skin="geometry"] .geometry-character > div {
+          height: 5.35rem !important;
+          box-shadow: 5px 6px 0 rgba(20,91,151,.08), 0 10px 22px rgba(20,91,151,.12), inset 0 1px 0 rgba(255,255,255,.95) !important;
+        }
+        html[data-skin="geometry"] .geometry-character > div > .relative.flex.items-center {
+          padding: .55rem !important;
+        }
+        html[data-skin="geometry"] .geometry-character > div > .relative.flex.items-center > div:first-child {
+          width: 3.65rem !important;
+          height: 3.65rem !important;
+        }
+        html[data-skin="geometry"] .geometry-app-grid {
+          row-gap: .75rem !important;
+        }
+        html[data-skin="geometry"] .geometry-dock {
+          max-width: calc(100vw - 2rem);
+          gap: .65rem !important;
+          padding-left: .7rem !important;
+          padding-right: .7rem !important;
+        }
+      }
+      html, body, #root {
+        width: 100%;
+        min-height: var(--app-height, 100lvh);
+        height: var(--app-height, 100lvh);
+      }
+      body {
+        background-color: #0f1115;
+        margin: 0;
+        overflow: hidden;
+        /* Critical: Prevent browser back/forward swipe navigation AND vertical rubber-banding */
+        overscroll-behavior: none;
+        /* Prevent text selection to feel like an app */
+        user-select: none;
+        -webkit-user-select: none;
+        height: var(--app-height);
+        min-height: var(--app-height);
+        width: 100vw;
+        font-family: var(--app-font);
+      }
+      /* 顶部时钟/电量条被隐藏时（外观开关或平台默认，由 PhoneShell 切换 .sully-statusbar-hidden），
+         chrome-top 不再需要那 1.5rem 状态栏预留，退化成 safe-top，
+         避免用 --chrome-top 让位的顶栏（交换日记/彼方/剧场等）顶部多留空白。 */
+      html.sully-statusbar-hidden {
+        --chrome-top: var(--safe-top);
+      }
+      /* 紧凑显示：时间/电量嵌入安全区左右两侧，App 顶栏从安全区底部开始。
+         无刘海设备仍至少留 1.5rem 给时间栏；有灵动岛时不把按钮顶进遮挡区。 */
+      html.sully-statusbar-compact {
+        --chrome-top: max(var(--safe-top), 1.5rem);
+      }
+      body.ios-standalone {
+        min-height: var(--app-height);
+        height: var(--app-height);
+        overscroll-behavior-y: auto;
+        overscroll-behavior-x: none;
+      }
+      body.ios-standalone #root {
+        min-height: var(--app-height);
+        height: var(--app-height);
+      }
+      /* Global scroll behavior fix */
+      .no-overscroll {
+        overscroll-behavior: none;
+      }
+      .overscroll-contain {
+        overscroll-behavior: contain;
+      }
+      /* Re-enable selection for inputs */
+      input, textarea {
+        user-select: text;
+        -webkit-user-select: text;
+      }
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+      /* 默认细滚动条：盖掉浏览器又粗又灰的原生滚动条（.no-scrollbar 仍可隐藏） */
+      *::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      *::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      *::-webkit-scrollbar-thumb {
+        background: rgba(140, 140, 160, 0.3);
+        border-radius: 999px;
+      }
+      *::-webkit-scrollbar-thumb:hover {
+        background: rgba(140, 140, 160, 0.5);
+      }
+      /* 阅读器细滚动条（明暗主题通用，半透明） */
+      .vr-reader-scroll {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(140,140,140,0.35) transparent;
+      }
+      .vr-reader-scroll::-webkit-scrollbar {
+        width: 5px;
+      }
+      .vr-reader-scroll::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .vr-reader-scroll::-webkit-scrollbar-thumb {
+        background: rgba(140,140,140,0.35);
+        border-radius: 999px;
+      }
+      .vr-reader-scroll::-webkit-scrollbar-thumb:hover {
+        background: rgba(140,140,140,0.55);
+      }
+      input:focus, textarea:focus, select:focus {
+        outline: none;
+      }
+      /* Utility for Safe Area —— 统一引用单一来源变量 */
+      .pb-safe {
+        padding-bottom: var(--safe-bottom);
+      }
+      /* 软键盘弹出时（iosStandalone 在 body 上挂 .ios-keyboard-open），收掉底部给 home 条留的 safe 间隙，
+         让聊天输入栏直接贴住键盘：① 外壳容器不再把底边钉在 safe 上方，铺到可视区底；② 输入栏收掉自己的 pb-safe 白条。
+         键盘收起后 class 移除，两者各自回到 safe 让位。app 高度跟随可视区由 utils/iosStandalone.ts 处理。
+         （外壳 bottom 用 !important 盖过 PhoneShell 给它设的 inline style。） */
+      .sully-chat-inputbar {
+        transition: padding-bottom 0.18s ease-out;
+      }
+      body.ios-keyboard-open .sully-shell-content {
+        bottom: 0 !important;
+      }
+      body.ios-keyboard-open .sully-chat-inputbar {
+        padding-bottom: 0;
+      }
+      /* 通话页：键盘弹起时收起大头像英雄区（约 300px），把可视区让给消息列表 + 输入框。
+         可视区收到键盘上方后若不收起大头像，会把输入框顶出可视区。用 max-height 过渡平滑收起。 */
+      .sully-call-hero {
+        transition: max-height 0.2s ease-out, opacity 0.2s ease-out, padding 0.2s ease-out;
+        max-height: 420px;
+      }
+      body.ios-keyboard-open .sully-call-hero {
+        max-height: 0;
+        opacity: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+        overflow: hidden;
+        pointer-events: none;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "katex": "https://esm.sh/katex@0.16.9"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
