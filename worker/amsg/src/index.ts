@@ -48,6 +48,7 @@ import {
 import {
   AMSG_CHAT_FAIL_KEY,
   AMSG_FIRE_PACK_KEY,
+  AMSG_JIWEN_STATE_KEY,
   AMSG_LAST_SKIP_KEY,
   AMSG_SELF_LOG_KEY,
   AMSG2_INSTANT_STUB_TEMPLATE,
@@ -69,6 +70,7 @@ import {
   resolveMaxUnansweredSends,
   unpackStateValue,
 } from '../../../utils/amsgFirePack';
+import { createJiwen, type JiwenState } from '../../../utils/jiwen';
 import { resolveFireSceneSong } from '../../../utils/amsgFireScene';
 import { shouldExpireFire } from '../../../utils/amsg2ExpireGuard';
 import { buildFireTaskListBlock, isPendingTask, MAX_ACTIVE_TASKS_PER_CHAR, shortTaskId } from '../../../utils/amsg2Tasks';
@@ -1694,6 +1696,45 @@ export const amsgHooks = {
       throw fail('任务行 next_send_at 解析不出触发时刻', { nextSendAt: ctx.task.nextSendAt });
     }
 
+    // 积温云端路径：fire_pack 只带配置，连续状态放在同角色 namespace 的独立 key。
+    // 这样 Worker 未部署时前端仍可本地运行；部署后状态不会因为重新上传 fire_pack 被覆盖。
+    let jiwenPrompt = '';
+    if (!instant && pack.jiwen?.enabled) {
+      const savedRow = charRows.find((row) => row.key === AMSG_JIWEN_STATE_KEY);
+      let savedState: JiwenState | null = null;
+      try { savedState = savedRow?.value ? JSON.parse(savedRow.value) as JiwenState : null; } catch { savedState = null; }
+      const engine = createJiwen({
+        initialState: pack.jiwen.initialState,
+        rates: {
+          ...(pack.jiwen.connectionRate !== undefined ? { connectionGrowth: pack.jiwen.connectionRate } : {}),
+          ...(pack.jiwen.pride !== undefined ? { prideDefendTarget: pack.jiwen.pride } : {}),
+        },
+        thresholds: pack.jiwen.forceContact !== undefined ? { forceContact: pack.jiwen.forceContact } : undefined,
+        onLoad: () => savedState,
+        onSave: async (state) => {
+          await ctx.writeState?.(amsgStateNamespace(charId), [{ key: AMSG_JIWEN_STATE_KEY, value: JSON.stringify(state) }]);
+        },
+      });
+      const before = await engine.getState();
+      if (pack.lastUserMessageAt && (!before.lastTick || pack.lastUserMessageAt > Date.parse(before.lastTick))) {
+        await engine.resetConnection();
+      }
+      const lastTickMs = before.lastTick ? Date.parse(before.lastTick) : ctx.now.getTime();
+      const elapsedMinutes = Number.isFinite(lastTickMs)
+        ? Math.max(1, Math.min(60, (ctx.now.getTime() - lastTickMs) / 60000))
+        : 1;
+      const triggers = await engine.tick(elapsedMinutes);
+      if (!triggers.some((trigger) => trigger.action === 'contact')) {
+        if (triggers.some((trigger) => trigger.action === 'find_activity')) await engine.setActivity('self-care', '整理一下心情');
+        await recordSkip(ctx, charId, 'jiwen-no-contact', occurrenceMs);
+        console.log('[amsg:jiwen-skip]', { taskId: ctx.task.id, charId, triggers: triggers.map((trigger) => trigger.action) });
+        return { skip: true } as const;
+      }
+      jiwenPrompt = `\n\n【积温主动意识】\n${engine.getPromptContext()}\n${engine.getStyleGuidance()}`;
+      // 开口只部分降低连接需求；用户真正回复后，下一轮根据 lastUserMessageAt 归零。
+      await engine.applyDelta({ connection: -0.35 });
+    }
+
     // 防穿帮闸·worker 主判定：一次性任务创建后对话已前进 / 循环任务到点时用户
     // 正在热聊 → { skip: true } 跳过本次 fire（amsg-server skip 出口，任务照常
     // 推进/删除），一个生成 token 都不花。fire_pack.lastUserMessageAt 随 amsgStateSync
@@ -2015,7 +2056,7 @@ export const amsgHooks = {
       // 「此刻在做什么」里的钟点跟今日节日同一个开关：关掉时间感知的角色不该从日程块
       // 读到「23:00」——那正是这个开关要挡的东西。日程内容本身照给。
       includeClock: toolPack.timeAwarenessEnabled,
-    }) + mcpBlock + scheduleBlock;
+    }) + jiwenPrompt + mcpBlock + scheduleBlock;
     return {
       messages: [{ role: 'user' as const, content: prompt }],
       ...common,

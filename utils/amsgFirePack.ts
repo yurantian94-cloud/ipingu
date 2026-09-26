@@ -16,11 +16,14 @@
  */
 
 import type { ActiveMsg2TaskRecord } from '../types';
+import type { JiwenConfig } from './jiwen';
 import { renderFireSceneBlock, type AmsgFireScene } from './amsgFireScene';
 
 export const AMSG_STATE_NAMESPACE_PREFIX = 'amsg:char:';
 export const amsgStateNamespace = (charId: string) => `${AMSG_STATE_NAMESPACE_PREFIX}${charId}`;
 export const AMSG_FIRE_PACK_KEY = 'fire_pack';
+/** 积温运行状态由 worker 随角色保存，避免每次 fire_pack 都携带旧状态。 */
+export const AMSG_JIWEN_STATE_KEY = 'jiwen_state';
 
 /**
  * 角色到点自己发出去的那几条正文（每角色一份）。
@@ -200,6 +203,7 @@ const LAST_SKIP_REASONS = [
   'side-effects-only',
   'stale',
   'unanswered-limit',
+  'jiwen-no-contact',
 ] as const;
 
 export interface AmsgLastSkip {
@@ -215,6 +219,7 @@ export interface AmsgLastSkip {
    * side-effects-only     模型这次只做了副作用（点赞、写日记之类）却没说话，整条不发
    * stale                 到点时已经过期太久（服务停摆后恢复），不再补发
    * unanswered-limit      角色自排的任务到点时，用户未回复期间的连发条数已到用户设的上限
+   * jiwen-no-contact      积温判断本轮还没有强烈到需要主动开口
    */
   reason: (typeof LAST_SKIP_REASONS)[number];
   skippedAt: number;
@@ -272,6 +277,8 @@ export const describeLastSkip = (skip: AmsgLastSkip, formatTime: (ms: number) =>
       // 写成「等你回复后恢复」的话，用户会一直等一条永远不会来的消息。
       return `${when} 那次主动消息没发——你未回复期间 ta 的连发条数已到你设置的连发上限，`
         + `跳过的这次不会补发；等你回话之后，ta 自己排的后续才会重新开始发。`;
+    case 'jiwen-no-contact':
+      return `${when} 那次主动消息没有发——积温判断 ta 这会儿还没有强烈到想主动开口。`;
   }
 };
 
@@ -398,6 +405,8 @@ export interface AmsgFirePack {
    * 绝不退回主动消息模板去答聊天。
    */
   chat?: AmsgFirePackChat;
+  /** 可选的积温配置；状态存放在同 namespace 的 jiwen_state。 */
+  jiwen?: JiwenConfig;
   /**
    * 用户设的「未回复期间最多连发几条」（角色级设置，见 ActiveMsg2CharacterConfig 同名字段）。
    * 0 = 不限；缺省 = worker 用 DEFAULT_MAX_UNANSWERED_SENDS。worker 拿它拦两处：
@@ -898,6 +907,10 @@ export const parseFirePack = (value: string): AmsgFirePack | null => {
           && Number.isFinite(parsed.maxUnansweredSends)
           && parsed.maxUnansweredSends >= 0)) &&
       typeof parsed.selfScheduleEnabled === 'boolean'
+      && (parsed.jiwen === undefined || (
+        typeof parsed.jiwen === 'object' && parsed.jiwen !== null
+        && typeof parsed.jiwen.enabled === 'boolean'
+      ))
     ) {
       return parsed as AmsgFirePack;
     }

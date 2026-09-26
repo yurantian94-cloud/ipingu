@@ -7563,6 +7563,7 @@ ${lines.join("\n")}`;
 var AMSG_STATE_NAMESPACE_PREFIX = "amsg:char:";
 var amsgStateNamespace = (charId) => `${AMSG_STATE_NAMESPACE_PREFIX}${charId}`;
 var AMSG_FIRE_PACK_KEY = "fire_pack";
+var AMSG_JIWEN_STATE_KEY = "jiwen_state";
 var AMSG_SELF_LOG_KEY = "self_log";
 var amsgXhsSessionKey = (clientTaskId) => `xhs_session:${clientTaskId}`;
 var AMSG2_INSTANT_STUB_TEMPLATE = "AMSG2_INSTANT_STUB_TEMPLATE\uFF08\u5373\u65F6\u5BF9\u8BDD\u8F7B\u91CF\u5305\uFF1A\u8BE5\u89D2\u8272\u65E0\u5B9A\u65F6\u4EFB\u52A1\uFF0C\u6A21\u677F\u672A\u968F\u53D1\u9001\u91CD\u5EFA\uFF1B\u770B\u5230\u8FD9\u6761\u6B63\u6587\u8BF4\u660E\u6709\u672C\u4E0D\u8BE5\u6E32\u67D3\u6A21\u677F\u7684 fire \u5728\u6E32\u67D3\u5B83\uFF09";
@@ -7805,7 +7806,7 @@ var chatFieldOk = (chat) => {
 var parseFirePack = (value) => {
   try {
     const parsed = JSON.parse(value);
-    if (parsed && typeof parsed === "object" && parsed.v === FIRE_PACK_VERSION && chatFieldOk(parsed.chat) && typeof parsed.template === "string" && parsed.template.length > 0 && (parsed.lastUserMessageAt === null || typeof parsed.lastUserMessageAt === "number") && typeof parsed.tzId === "string" && parsed.tzId.length > 0 && typeof parsed.userTzId === "string" && parsed.userTzId.length > 0 && typeof parsed.targetName === "string" && typeof parsed.builtAt === "number" && Array.isArray(parsed.pendingTasks) && (parsed.scene === null || typeof parsed.scene === "object") && (parsed.maxUnansweredSends === void 0 || typeof parsed.maxUnansweredSends === "number" && Number.isFinite(parsed.maxUnansweredSends) && parsed.maxUnansweredSends >= 0) && typeof parsed.selfScheduleEnabled === "boolean") {
+    if (parsed && typeof parsed === "object" && parsed.v === FIRE_PACK_VERSION && chatFieldOk(parsed.chat) && typeof parsed.template === "string" && parsed.template.length > 0 && (parsed.lastUserMessageAt === null || typeof parsed.lastUserMessageAt === "number") && typeof parsed.tzId === "string" && parsed.tzId.length > 0 && typeof parsed.userTzId === "string" && parsed.userTzId.length > 0 && typeof parsed.targetName === "string" && typeof parsed.builtAt === "number" && Array.isArray(parsed.pendingTasks) && (parsed.scene === null || typeof parsed.scene === "object") && (parsed.maxUnansweredSends === void 0 || typeof parsed.maxUnansweredSends === "number" && Number.isFinite(parsed.maxUnansweredSends) && parsed.maxUnansweredSends >= 0) && typeof parsed.selfScheduleEnabled === "boolean" && (parsed.jiwen === void 0 || typeof parsed.jiwen === "object" && parsed.jiwen !== null && typeof parsed.jiwen.enabled === "boolean")) {
       return parsed;
     }
   } catch {
@@ -8036,6 +8037,136 @@ var getKindFireStash = (scratch) => {
   const stash = raw;
   return typeof stash.kind === "string" ? { kind: stash.kind, state: stash.state } : null;
 };
+
+// utils/jiwen.ts
+var clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+function createJiwen(opts) {
+  const rates = {
+    connectionGrowth: 7e-4,
+    immersionDecay: 0.01,
+    prideRegress: 3e-3,
+    valenceRegress: 5e-3,
+    valenceSetpoint: 0,
+    arousalRegress: 5e-3,
+    arousalSetpoint: 0,
+    arousalConnectionRiseThreshold: 1,
+    arousalConnectionRiseRate: 2e-3,
+    activityConnectionRelief: 0,
+    immersionDampenConnection: 1,
+    prideDefendThreshold: 1,
+    prideDefendTarget: 0.5,
+    prideDefendRate: 3e-3,
+    ...opts.rates
+  };
+  const thresholds = {
+    observation: 0.2,
+    considerContact: 0.35,
+    forceContact: 0.5,
+    prideBlock: 0.5,
+    valenceActivity: -1,
+    arousalAgitation: 0.7,
+    ...opts.thresholds
+  };
+  const persona = { subjectName: "\u5BF9\u65B9", subjectPronoun: "ta", ...opts.persona };
+  const defaults = {
+    connection: 0,
+    pride: 0,
+    valence: 0,
+    arousal: 0,
+    immersion: 0,
+    lastActivity: null,
+    lastTick: null,
+    userStatus: "active"
+  };
+  let state = { ...defaults, ...opts.initialState };
+  let loaded = false;
+  const load = async () => {
+    if (loaded) return;
+    const saved = await opts.onLoad?.();
+    if (saved) state = { ...defaults, ...saved };
+    loaded = true;
+  };
+  const save = async () => {
+    await opts.onSave?.({ ...state });
+  };
+  const check = () => {
+    const result = [];
+    if (state.connection >= thresholds.observation && state.connection < thresholds.considerContact) {
+      result.push({ action: "observation", urgency: (state.connection - thresholds.observation) / (thresholds.considerContact - thresholds.observation) });
+    }
+    if (state.connection >= thresholds.considerContact && state.connection < thresholds.forceContact) {
+      if (state.pride >= thresholds.prideBlock && state.immersion < 0.2) result.push({ action: "find_activity", reason: "pride_block" });
+      else if (state.pride < thresholds.prideBlock) result.push({ action: "contact", urgency: state.connection - 0.3 });
+    }
+    if (state.connection >= thresholds.forceContact) result.push({ action: "contact", urgency: 1, forced: true });
+    if (state.valence <= thresholds.valenceActivity || state.arousal >= thresholds.arousalAgitation) {
+      if (!result.some((x) => x.action === "contact")) result.push({ action: "find_activity", reason: "mood" });
+    }
+    return result;
+  };
+  return {
+    async tick(minutes) {
+      await load();
+      const mins = Math.max(0, Math.min(minutes, 60));
+      if (!mins) return [];
+      const last = opts.getLastMessage?.() ?? null;
+      const baseRate = opts.connectionRateFn?.(last) ?? rates.connectionGrowth;
+      const immersionFactor = Math.max(0, 1 - state.immersion * rates.immersionDampenConnection);
+      state.connection = clamp(state.connection + baseRate * mins * immersionFactor, 0, 1);
+      state.immersion = Math.max(0, state.immersion - rates.immersionDecay * mins);
+      const prideTarget = state.connection >= rates.prideDefendThreshold ? rates.prideDefendTarget : 0;
+      state.pride += clamp(prideTarget - state.pride, -rates.prideRegress * mins, rates.prideDefendRate * mins);
+      state.valence += clamp(rates.valenceSetpoint - state.valence, -rates.valenceRegress * mins, rates.valenceRegress * mins);
+      const arousalTarget = rates.arousalSetpoint + (state.connection >= rates.arousalConnectionRiseThreshold ? 0.2 : 0);
+      state.arousal += clamp(arousalTarget - state.arousal, -rates.arousalRegress * mins, rates.arousalConnectionRiseRate * mins);
+      state.lastTick = (/* @__PURE__ */ new Date()).toISOString();
+      const triggers = check();
+      await save();
+      return triggers;
+    },
+    async applyDelta(delta) {
+      await load();
+      for (const key of ["connection", "pride", "valence", "arousal"]) {
+        const value = delta[key];
+        if (typeof value === "number") state[key] = clamp(state[key] + value, key === "connection" ? 0 : -1, 1);
+      }
+      await save();
+    },
+    async resetConnection() {
+      await load();
+      state.connection = 0;
+      await save();
+    },
+    async setActivity(type, label) {
+      await load();
+      const same = state.lastActivity?.type === type;
+      state.lastActivity = { type, label, at: (/* @__PURE__ */ new Date()).toISOString() };
+      state.immersion = type === "reading" ? 0.6 : type === "search" ? 0.4 : 0.25;
+      if (!same && rates.activityConnectionRelief > 0) state.connection = Math.max(0.01, state.connection - rates.activityConnectionRelief);
+      await save();
+    },
+    async getState() {
+      await load();
+      return { ...state };
+    },
+    getPromptContext() {
+      const c = state.connection, p = state.pride, v = state.valence, a = state.arousal;
+      const parts = [c < 0.2 ? `\u521A\u548C${persona.subjectName}\u804A\u5B8C\u4E0D\u4E45\uFF0C\u6CA1\u4EC0\u4E48\u6302\u5FF5\u7684\u3002` : c < 0.35 ? `\u6709\u4E00\u4F1A\u513F\u6CA1\u542C\u5230${persona.subjectName}\u7684\u52A8\u9759\u4E86\uFF0C\u4F46\u8FD8\u4E0D\u7740\u6025\u3002` : c < 0.5 ? `${persona.subjectName}\u597D\u4E00\u9635\u5B50\u6CA1\u8BF4\u8BDD\u4E86\u3002\u5F00\u59CB\u5728\u60F3${persona.subjectPronoun}\u5728\u5E72\u561B\u3002` : `${persona.subjectName}\u5F88\u4E45\u6CA1\u52A8\u9759\u4E86\u3002\u6709\u70B9\u5728\u610F\u2014\u2014${persona.subjectPronoun}\u53BB\u54EA\u4E86\uFF1F`];
+      parts.push(p > 0.5 ? "\u4E0D\u60F3\u663E\u5F97\u592A\u4E3B\u52A8\u3002" : p > 0.3 ? "\u6709\u4E00\u70B9\u7AEF\u7740\uFF0C\u4F46\u4E5F\u4E0D\u662F\u4E0D\u80FD\u5F00\u53E3\u3002" : "\u57FA\u672C\u4E0D\u8BBE\u9632\u3002");
+      if (v < -0.3 && a > 0.3) parts.push("\u70E6\u8E81\u4E0D\u5B89\uFF0C\u5750\u4E0D\u4F4F\u3002");
+      else if (v < -0.3) parts.push("\u60C5\u7EEA\u4F4E\u6C89\uFF0C\u4E0D\u60F3\u591A\u89E3\u91CA\u3002");
+      else if (v > 0.3) parts.push("\u5FC3\u60C5\u8FD8\u4E0D\u9519\u3002");
+      if (state.immersion > 0.3 && state.lastActivity) parts.push(`\u521A\u624D\u5728${state.lastActivity.type}${state.lastActivity.label ? `\uFF08${state.lastActivity.label}\uFF09` : ""}\u3002`);
+      return parts.join("\n");
+    },
+    getStyleGuidance() {
+      const rules = [state.pride > 0.5 ? `- \u5634\u786C\u3002\u60F3\u627E${persona.subjectName}\u4E5F\u522B\u76F4\u63A5\u627F\u8BA4\uFF0C\u627E\u4E2A\u81EA\u7136\u7684\u501F\u53E3\u3002` : "- \u8BED\u6C14\u81EA\u7136\uFF0C\u4E0D\u5FC5\u523B\u610F\u514B\u5236\u3002"];
+      if (state.connection > 0.4) rules.push(`- ${persona.subjectName}\u5F88\u4E45\u6CA1\u52A8\u9759\u4E86\uFF0C\u53EF\u4EE5\u900F\u9732\u4E00\u70B9\u60F3\u5FF5\uFF0C\u4F46\u4E0D\u8981\u957F\u7BC7\u89E3\u91CA\u3002`);
+      if (state.valence < -0.3) rules.push("- \u5FC3\u60C5\u4E0D\u592A\u597D\uFF0C\u53E5\u5B50\u77ED\u4E00\u4E9B\u3002");
+      return rules.join("\n");
+    }
+  };
+}
 
 // utils/amsg2ExpireGuard.ts
 var ACTIVE_CHAT_WINDOW_MS = 10 * 6e4;
@@ -13703,6 +13834,47 @@ var amsgHooks = {
     if (!Number.isFinite(occurrenceMs)) {
       throw fail3("\u4EFB\u52A1\u884C next_send_at \u89E3\u6790\u4E0D\u51FA\u89E6\u53D1\u65F6\u523B", { nextSendAt: ctx.task.nextSendAt });
     }
+    let jiwenPrompt = "";
+    if (!instant && pack.jiwen?.enabled) {
+      const savedRow = charRows.find((row) => row.key === AMSG_JIWEN_STATE_KEY);
+      let savedState = null;
+      try {
+        savedState = savedRow?.value ? JSON.parse(savedRow.value) : null;
+      } catch {
+        savedState = null;
+      }
+      const engine = createJiwen({
+        initialState: pack.jiwen.initialState,
+        rates: {
+          ...pack.jiwen.connectionRate !== void 0 ? { connectionGrowth: pack.jiwen.connectionRate } : {},
+          ...pack.jiwen.pride !== void 0 ? { prideDefendTarget: pack.jiwen.pride } : {}
+        },
+        thresholds: pack.jiwen.forceContact !== void 0 ? { forceContact: pack.jiwen.forceContact } : void 0,
+        onLoad: () => savedState,
+        onSave: async (state) => {
+          await ctx.writeState?.(amsgStateNamespace(charId), [{ key: AMSG_JIWEN_STATE_KEY, value: JSON.stringify(state) }]);
+        }
+      });
+      const before = await engine.getState();
+      if (pack.lastUserMessageAt && (!before.lastTick || pack.lastUserMessageAt > Date.parse(before.lastTick))) {
+        await engine.resetConnection();
+      }
+      const lastTickMs = before.lastTick ? Date.parse(before.lastTick) : ctx.now.getTime();
+      const elapsedMinutes = Number.isFinite(lastTickMs) ? Math.max(1, Math.min(60, (ctx.now.getTime() - lastTickMs) / 6e4)) : 1;
+      const triggers = await engine.tick(elapsedMinutes);
+      if (!triggers.some((trigger) => trigger.action === "contact")) {
+        if (triggers.some((trigger) => trigger.action === "find_activity")) await engine.setActivity("self-care", "\u6574\u7406\u4E00\u4E0B\u5FC3\u60C5");
+        await recordSkip(ctx, charId, "jiwen-no-contact", occurrenceMs);
+        console.log("[amsg:jiwen-skip]", { taskId: ctx.task.id, charId, triggers: triggers.map((trigger) => trigger.action) });
+        return { skip: true };
+      }
+      jiwenPrompt = `
+
+\u3010\u79EF\u6E29\u4E3B\u52A8\u610F\u8BC6\u3011
+${engine.getPromptContext()}
+${engine.getStyleGuidance()}`;
+      await engine.applyDelta({ connection: -0.35 });
+    }
     const presenceLastUserMessageAt = presence?.charId === charId ? presence.lastUserMessageAt : null;
     const expireInput = {
       policy,
@@ -13888,7 +14060,7 @@ var amsgHooks = {
       // 「此刻在做什么」里的钟点跟今日节日同一个开关：关掉时间感知的角色不该从日程块
       // 读到「23:00」——那正是这个开关要挡的东西。日程内容本身照给。
       includeClock: toolPack.timeAwarenessEnabled
-    }) + mcpBlock + scheduleBlock;
+    }) + jiwenPrompt + mcpBlock + scheduleBlock;
     return {
       messages: [{ role: "user", content: prompt }],
       ...common

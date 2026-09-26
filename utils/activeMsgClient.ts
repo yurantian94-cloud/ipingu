@@ -865,6 +865,23 @@ export const buildFirePack = async (
     // 「此刻在做什么」也带原始素材：整天的作息表 + 歌单抽样池，worker 到点按 tzId
     // 挑当前时段。烤成文字的话，凌晨三点触发时角色会说「我在健身房呢」。
     scene,
+    ...((char.activeMsg2Config?.jiwen ?? char.proactiveConfig?.jiwen)?.enabled
+      ? {
+          jiwen: {
+            enabled: true,
+            pride: (char.activeMsg2Config?.jiwen ?? char.proactiveConfig?.jiwen)?.pride,
+            connectionRate: (char.activeMsg2Config?.jiwen ?? char.proactiveConfig?.jiwen)?.connectionRate,
+            forceContact: (char.activeMsg2Config?.jiwen ?? char.proactiveConfig?.jiwen)?.forceContact,
+            // 第一次部署 Worker 时给它一个本地快照；之后以 worker 的 jiwen_state 为准。
+            initialState: (() => {
+              try {
+                const raw = localStorage.getItem(`sullyos.jiwen.v1.${char.id}`);
+                return raw ? JSON.parse(raw) : undefined;
+              } catch { return undefined; }
+            })(),
+          },
+        }
+      : {}),
   };
 };
 

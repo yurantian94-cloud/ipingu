@@ -16,6 +16,13 @@ export const normalizeApiCredential = (value: unknown): string =>
 export const normalizeApiModel = (value: unknown): string =>
   cleanEdgeCharacters(value);
 
+export const normalizeSquareImageSize = (value: unknown): string => {
+  const match = cleanEdgeCharacters(value).match(/^(\d+)x(\d+)$/i);
+  if (!match || match[1] !== match[2]) return '1024x1024';
+  const side = Math.max(256, Math.min(2048, Number(match[1])));
+  return `${side}x${side}`;
+};
+
 export function normalizeApiConfig(config: APIConfig): APIConfig {
   const visionApi = config.visionApi;
   const imageApi = config.imageApi;
@@ -34,18 +41,16 @@ export function normalizeApiConfig(config: APIConfig): APIConfig {
     } : {}),
     ...(imageApi ? {
       imageApi: {
-        enabled: imageApi.enabled === true,
+        // Local Dream 已移除；导入旧备份时关闭这条旧配置，避免继续请求本机服务。
+        enabled: (imageApi as any).protocol === 'local-dream' ? false : imageApi.enabled === true,
         // workerUrl/provider 是旧版字段。导入旧备份时仍可正常迁移到新接口设置。
-        baseUrl: normalizeApiBaseUrl(imageApi.baseUrl || (imageApi as any).workerUrl),
+        baseUrl: (imageApi as any).protocol === 'local-dream' ? '' : normalizeApiBaseUrl(imageApi.baseUrl || (imageApi as any).workerUrl),
         apiKey: normalizeApiCredential(imageApi.apiKey),
-        model: normalizeApiModel(imageApi.model) || 'gpt-image-1',
-        size: normalizeApiModel(imageApi.size) || '1024x1024',
-        quality: normalizeApiModel(imageApi.quality) || 'auto',
-        protocol: imageApi.protocol === 'legacy-worker'
-          ? 'legacy-worker'
-          : imageApi.protocol === 'local-dream'
-            ? 'local-dream'
-            : (imageApi as any).provider ? 'legacy-worker' : 'openai-compatible',
+        model: (imageApi as any).protocol === 'local-dream' ? 'gpt-image-1' : normalizeApiModel(imageApi.model) || 'gpt-image-1',
+        size: (imageApi as any).protocol === 'local-dream' ? '1024x1024' : normalizeApiModel(imageApi.size) || '1024x1024',
+        gallerySize: (imageApi as any).protocol === 'local-dream' ? '1024x1024' : normalizeSquareImageSize((imageApi as any).gallerySize),
+        quality: (imageApi as any).protocol === 'local-dream' ? 'auto' : normalizeApiModel(imageApi.quality) || 'auto',
+        protocol: imageApi.protocol === 'legacy-worker' || (imageApi as any).provider ? 'legacy-worker' : 'openai-compatible',
       },
     } : {}),
   };

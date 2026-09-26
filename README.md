@@ -115,6 +115,8 @@ npm run cap:android
 
 然后在 Android Studio 里点播放按钮，或者 Build → Generate Signed Bundle 生成 APK。草，终于能装在真手机上了。
 
+首次打包时同步脚本会自动接入 Android 屏幕使用时间插件。安装后打开「设置 → 屏幕使用时间（Android）」，按提示在系统设置里允许 SullyOS 访问使用情况；之后角色才能按需读取最近几天各应用的使用时长。网页端不会读取这项数据。
+
 ## 数据存储在哪？（你的秘密安全吗）
 
 **主要存在你本地浏览器里**（IndexedDB）。

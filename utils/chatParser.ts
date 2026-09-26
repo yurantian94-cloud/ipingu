@@ -10,7 +10,7 @@ import { executeReaderDirectives } from './readerChat';
 import { wallClockToTimestamp } from './timezone';
 import { CollaborationStore } from '../features/collaboration/store';
 import { putImageBlob } from './blobRef';
-import { generateGalleryImage, readConfiguredImageGenerator } from './imageGenerator';
+import { generateImage, readConfiguredImageGenerator } from './imageGenerator';
 import {
     collaborationFileMessageMetadata,
     extractCollaborationFileDirectives,
@@ -191,16 +191,9 @@ export const ChatParser = {
                     let previewError = '';
                     try {
                         const imageApi = readConfiguredImageGenerator();
-                        let previewBlob: Blob;
-                        if (imageApi.enabled && imageApi.baseUrl) {
-                            // 只传藏品描述 + 全局图片服务配置，绝不拼接角色外观锚点。
-                            previewBlob = await generateGalleryImage(String(collectionDescription), imageApi);
-                        } else {
-                            // 未配生图 API 时，保留首次聊天的内置测试预览，流程仍然可完整体验。
-                            const fallback = await fetch('/starlight-first-chat.png');
-                            if (!fallback.ok) throw new Error('内置纪念品预览不可用');
-                            previewBlob = await fallback.blob();
-                        }
+                        if (!imageApi.enabled || !imageApi.baseUrl) throw new Error('生图 API 未启用');
+                        // 送出时直接生成预览；只传藏品描述 + 全局图片服务配置，绝不拼接角色外观锚点。
+                        const previewBlob = await generateImage(String(collectionDescription), { ...imageApi, size: imageApi.gallerySize });
                         previewImageRef = await putImageBlob(previewBlob);
                     } catch (error) {
                         console.warn('[StarlightGallery] gift preview generation failed:', error);
@@ -222,7 +215,7 @@ export const ChatParser = {
                 if (imageApi.enabled && character?.imageGenerationEnabled === true && request?.prompt) {
                     const anchor = character.imageGenerationAnchor?.trim();
                     const prompt = anchor ? `${anchor}. ${String(request.prompt)}` : String(request.prompt);
-                    const blob = await generateGalleryImage(prompt, imageApi);
+                    const blob = await generateImage(prompt, imageApi);
                     const ref = await putImageBlob(blob);
                     await persist({
                         charId,

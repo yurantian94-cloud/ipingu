@@ -1003,7 +1003,7 @@ const parsePackage = async (entries: PackageEntry[]): Promise<ParsedPackage> => 
     texturePaths: [...new Set(refs.Textures.map(texture => resolveModelReference(modelPath, texture)))],
     ...(vtube?.SavedModelPosition ? {
       framing: {
-        scale: clamp(finiteOr(vtube.SavedModelPosition.Scale?.x, 1), 0.5, 6),
+        scale: clamp(finiteOr(vtube.SavedModelPosition.Scale?.x, 1), 0.5, 20),
         offsetX: clamp(finiteOr(vtube.SavedModelPosition.Position?.x, 0) / 200, -1.4, 1.4),
         offsetY: clamp(-finiteOr(vtube.SavedModelPosition.Position?.y, 0) / 200, -3.2, 3.2),
       },

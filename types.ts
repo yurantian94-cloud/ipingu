@@ -357,9 +357,11 @@ export interface ImageApiConfig {
   apiKey: string;
   model: string;
   size: string;
+  /** 星光纪念馆专用尺寸，必须保持正方形。 */
+  gallerySize: string;
   quality: string;
-  /** local-dream = Android 手机上的 Local Dream HTTP 服务。 */
-  protocol: 'openai-compatible' | 'legacy-worker' | 'local-dream';
+  /** openai-compatible = NewAPI 等标准接口；legacy-worker = 旧自定义接口。 */
+  protocol: 'openai-compatible' | 'legacy-worker';
 }
 
 export interface APIConfig {
@@ -538,6 +540,13 @@ export interface ActiveMsg2TaskRecord {
 
 export interface ActiveMsg2CharacterConfig {
   enabled: boolean;
+  /** 云端主动消息是否启用积温意识判断。 */
+  jiwen?: {
+    enabled: boolean;
+    pride?: number;
+    connectionRate?: number;
+    forceContact?: number;
+  };
   /**
    * 即时对话按角色单独关。undefined = 跟随全局（全局即时对话开着就默认开）；
    * false = 这个角色的聊天回到本地前台生成。与 enabled（排程开关）互相独立：
@@ -3261,6 +3270,13 @@ export interface CharacterProfile {
       baseUrl: string;
       apiKey: string;
       model: string;
+    };
+    /** 积温主动意识：按连续状态决定是否真的主动开口。 */
+    jiwen?: {
+      enabled: boolean;
+      pride?: number;
+      connectionRate?: number;
+      forceContact?: number;
     };
   };
 

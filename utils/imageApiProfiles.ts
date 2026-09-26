@@ -11,27 +11,36 @@ export interface ImageApiProfile {
 export const IMAGE_API_PROFILES_STORAGE_KEY = 'os_image_api_profiles';
 export const IMAGE_API_ACTIVE_PROFILE_STORAGE_KEY = 'os_image_api_active_profile';
 
-const localDreamDefaults: ImageApiConfig = {
-  enabled: true,
-  baseUrl: 'http://127.0.0.1:8081',
+const defaultImageConfig: ImageApiConfig = {
+  enabled: false,
+  baseUrl: '',
   apiKey: '',
-  model: 'sd15-local',
-  size: '512x512',
+  model: 'gpt-image-1',
+  size: '1024x1024',
+  gallerySize: '1024x1024',
   quality: 'auto',
-  protocol: 'local-dream',
+  protocol: 'openai-compatible',
 };
 
 const normalizeConfig = (value: unknown, fallback: ImageApiConfig): ImageApiConfig => {
   const raw = value && typeof value === 'object' ? value as Partial<ImageApiConfig> : {};
-  const protocol = raw.protocol === 'legacy-worker' || raw.protocol === 'local-dream'
+  const protocol = raw.protocol === 'legacy-worker'
     ? raw.protocol
     : 'openai-compatible';
+  const removedLocalDream = (raw as any).protocol === 'local-dream';
   return {
-    enabled: raw.enabled === true,
-    baseUrl: String(raw.baseUrl ?? fallback.baseUrl ?? '').trim().replace(/\/+$/, ''),
-    apiKey: String(raw.apiKey ?? fallback.apiKey ?? '').trim(),
-    model: String(raw.model ?? fallback.model ?? '').trim(),
-    size: String(raw.size ?? fallback.size ?? '1024x1024').trim() || '1024x1024',
+    enabled: removedLocalDream ? false : raw.enabled === true,
+    baseUrl: removedLocalDream ? '' : String(raw.baseUrl ?? fallback.baseUrl ?? '').trim().replace(/\/+$/, ''),
+    apiKey: removedLocalDream ? '' : String(raw.apiKey ?? fallback.apiKey ?? '').trim(),
+    model: removedLocalDream ? 'gpt-image-1' : String(raw.model ?? fallback.model ?? '').trim(),
+    size: removedLocalDream ? '1024x1024' : String(raw.size ?? fallback.size ?? '1024x1024').trim() || '1024x1024',
+    gallerySize: removedLocalDream ? '1024x1024' : (() => {
+      const value = String((raw as any).gallerySize ?? (fallback as any).gallerySize ?? '1024x1024').trim();
+      const match = value.match(/^(\d+)x(\d+)$/i);
+      if (!match || match[1] !== match[2]) return '1024x1024';
+      const side = Math.max(256, Math.min(2048, Number(match[1])));
+      return `${side}x${side}`;
+    })(),
     quality: String(raw.quality ?? fallback.quality ?? 'auto').trim() || 'auto',
     protocol,
   };
@@ -44,10 +53,8 @@ const makeId = () => `image-${Date.now()}-${Math.random().toString(36).slice(2, 
  * 这样旧用户已有的 NewAPI 不会被强制改成本机 Local Dream。
  */
 export function readImageApiProfiles(currentConfig?: ImageApiConfig): ImageApiProfile[] {
-  const fallback = currentConfig || localDreamDefaults;
-  const shouldUseLocalDream = fallback.protocol === 'local-dream'
-    || (!fallback.baseUrl && !fallback.apiKey && (!fallback.model || fallback.model === 'gpt-image-1'));
-  const seedConfig = shouldUseLocalDream ? localDreamDefaults : fallback;
+  const fallback = (currentConfig as any)?.protocol === 'local-dream' ? defaultImageConfig : currentConfig || defaultImageConfig;
+  const seedConfig = fallback;
   try {
     const raw = JSON.parse(localStorage.getItem(IMAGE_API_PROFILES_STORAGE_KEY) || 'null');
     if (Array.isArray(raw)) {
@@ -66,8 +73,8 @@ export function readImageApiProfiles(currentConfig?: ImageApiConfig): ImageApiPr
   }
   return [{
     id: 'image-default',
-    name: shouldUseLocalDream ? '默认 Local Dream' : '当前生图方案',
-    config: normalizeConfig(seedConfig, localDreamDefaults),
+    name: '当前生图方案',
+    config: normalizeConfig(seedConfig, defaultImageConfig),
     updatedAt: Date.now(),
   }];
 }
@@ -96,5 +103,5 @@ export function writeActiveImageApiProfileId(id: string) {
 }
 
 export function createImageApiProfile(name: string, config: ImageApiConfig): ImageApiProfile {
-  return { id: makeId(), name: name.trim() || '未命名生图方案', config: normalizeConfig(config, localDreamDefaults), updatedAt: Date.now() };
+  return { id: makeId(), name: name.trim() || '未命名生图方案', config: normalizeConfig(config, defaultImageConfig), updatedAt: Date.now() };
 }
