@@ -109,6 +109,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
   const [maxUnanswered, setMaxUnanswered] = useState(
     saved?.maxUnansweredSends === undefined ? '' : String(saved.maxUnansweredSends),
   );
+  const [jiwenEnabled, setJiwenEnabled] = useState(saved?.jiwen?.enabled ?? false);
   const [useSecondaryApi, setUseSecondaryApi] = useState(saved?.useSecondaryApi ?? false);
   const [secUrl, setSecUrl] = useState(saved?.secondaryApi?.baseUrl ?? '');
   const [secKey, setSecKey] = useState(saved?.secondaryApi?.apiKey ?? '');
@@ -146,6 +147,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
     setInstantChatOn(config?.instantChatEnabled !== false);
     setMaxTokens(config?.maxTokens ? String(config.maxTokens) : '');
     setMaxUnanswered(config?.maxUnansweredSends === undefined ? '' : String(config.maxUnansweredSends));
+    setJiwenEnabled(config?.jiwen?.enabled ?? false);
     setUseSecondaryApi(config?.useSecondaryApi ?? false);
     setSecUrl(config?.secondaryApi?.baseUrl ?? '');
     setSecKey(config?.secondaryApi?.apiKey ?? '');
@@ -250,6 +252,7 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
     instantChatEnabled: instantChatOn ? undefined : false,
     maxTokens: maxTokens.trim() ? Number(maxTokens) : undefined,
     maxUnansweredSends: maxUnanswered === '' ? undefined : Number(maxUnanswered),
+    jiwen: { enabled: jiwenEnabled },
     useSecondaryApi: useSecondaryApi && !!secUrl,
     secondaryApi: useSecondaryApi && secUrl
       ? { baseUrl: secUrl.trim(), apiKey: secKey.trim(), model: secModel.trim() }
@@ -711,6 +714,22 @@ const ActiveMsg2SettingsModal: React.FC<ActiveMsg2SettingsModalProps> = ({
             )}
 
             <div className="pt-1 border-t border-slate-100">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <div className="font-bold text-slate-700">积温主动意识</div>
+                  <div className="text-xs text-slate-400 mt-1">Worker 到点前先判断角色是否真的想开口。</div>
+                </div>
+                <button
+                  onClick={() => setJiwenEnabled(!jiwenEnabled)}
+                  className={`w-12 h-7 rounded-full transition-colors relative ${jiwenEnabled ? 'bg-fuchsia-500' : 'bg-slate-200'}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-all duration-200 ${jiwenEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                </button>
+              </div>
+              <p className="text-xs text-slate-400 mb-3 leading-relaxed">
+                开启后，固定排程只代表“检查时机”，不代表每次都会发消息。状态会保存在 Worker 的角色空间里。
+              </p>
+
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block pl-1">连发上限</label>
               <select
                 value={maxUnanswered}

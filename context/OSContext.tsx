@@ -79,6 +79,7 @@ import { Capacitor } from '@capacitor/core';
 import { formatBytes } from '../utils/format';
 import { isEmotionEvalSkipped } from '../utils/devDebug';
 import { isBenignApplicationConsoleMessage } from '../utils/applicationConsole';
+import { createJiwen, type JiwenState } from '../utils/jiwen';
 
 import { initLocalStorageMirror } from '../utils/lsMirror';
 // 备份用：把存在 localStorage 的本机配置随导出一起带走（键名须与 importFullData 对齐）
@@ -644,13 +645,14 @@ const defaultApiConfig: APIConfig = {
     model: '',
   },
   imageApi: {
-    enabled: true,
-    baseUrl: 'http://127.0.0.1:8081',
+    enabled: false,
+    baseUrl: '',
     apiKey: '',
-    model: 'sd15-local',
-    size: '512x512',
+    model: 'gpt-image-1',
+    size: '1024x1024',
+    gallerySize: '1024x1024',
     quality: 'auto',
-    protocol: 'local-dream',
+    protocol: 'openai-compatible',
   },
   minimaxApiKey: '',
   minimaxGroupId: '',
@@ -2283,6 +2285,45 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
                   m => m.role === 'user' && !m.metadata?.proactiveHint
               );
 
+              // 积温：固定时间只是“检查时机”，是否真的开口由五轴状态决定。
+              // 状态按角色单独保存，避免刷新页面后重新从零开始。
+              const jiwenConfig = char.proactiveConfig?.jiwen;
+              let jiwen: ReturnType<typeof createJiwen> | null = null;
+              let jiwenContext = '';
+              let jiwenStyle = '';
+              if (jiwenConfig?.enabled) {
+                  const key = `sullyos.jiwen.v1.${charId}`;
+                  jiwen = createJiwen({
+                      persona: { subjectName: currentUserProfile?.name || '你', subjectPronoun: '你' },
+                      rates: {
+                          connectionGrowth: jiwenConfig.connectionRate ?? 0.0007,
+                          prideDefendTarget: jiwenConfig.pride ?? 0.5,
+                      },
+                      thresholds: { forceContact: jiwenConfig.forceContact ?? 0.5 },
+                      getLastMessage: () => lastRealUserMsg ? { timestamp: lastRealUserMsg.timestamp, content: lastRealUserMsg.content } : null,
+                      onLoad: () => {
+                          try { return JSON.parse(localStorage.getItem(key) || 'null') as JiwenState | null; } catch { return null; }
+                      },
+                      onSave: (next) => { try { localStorage.setItem(key, JSON.stringify(next)); } catch { /* 存储满时不影响聊天 */ } },
+                  });
+                  const jiwenState = await jiwen.getState();
+                  // 用户在上次主动消息之后回复过：连接需求回到低位。
+                  if (lastRealUserMsg && (!jiwenState.lastTick || lastRealUserMsg.timestamp > new Date(jiwenState.lastTick).getTime())) {
+                      await jiwen.resetConnection();
+                  }
+                  const lastTick = jiwenState.lastTick ? new Date(jiwenState.lastTick).getTime() : Date.now();
+                  const elapsedMinutes = Math.max(1, Math.min(60, (Date.now() - lastTick) / 60000));
+                  const triggers = await jiwen.tick(elapsedMinutes);
+                  if (!triggers.some((trigger) => trigger.action === 'contact')) {
+                      if (triggers.some((trigger) => trigger.action === 'find_activity')) await jiwen.setActivity('self-care', '整理一下心情');
+                      console.log(`[积温] ${char.name} 本轮不主动发消息：${triggers.map((trigger) => trigger.action).join(', ') || '还没到想念阈值'}`);
+                      drainQueuedProactive();
+                      return;
+                  }
+                  jiwenContext = await jiwen.getPromptContext();
+                  jiwenStyle = await jiwen.getStyleGuidance();
+              }
+
               const now = new Date();
               const timeStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
 
@@ -2307,9 +2348,10 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               const justMetOffline = lastRealMsgRaw?.metadata?.source === 'date'
                   && (now.getTime() - lastRealMsgRaw.timestamp) < DATE_AFTERGLOW_MS;
 
+              const jiwenHint = jiwen ? `\n\n[积温状态]\n${jiwenContext}\n${jiwenStyle}` : '';
               const hintContent = justMetOffline
                       ? `[系统提示（非${userName}发言）: 现在是 ${timeStr}。你和${userName}刚刚在线下见过面（如果上下文里有标着 [约会] 的内容，那就是你们见面时发生的事），现在你们暂时分开了，你拿起手机想给${userName}发条消息。请基于刚才的见面来发——可以回味见面里的某个细节、补一句当时没说出口的话、关心${userName}到家了没，或者就是刚分开就有点想念。绝对不要表现得好像很久没联系，更不要对刚才的见面毫不知情。一两句话就好。]`
-                      : `[系统提示（非${userName}发言）: 现在是 ${timeStr}。${timeSinceUser ? `${userName}已经 ${timeSinceUser} 没有找你说话了。` : ''}这是系统给你的一次主动发消息机会——${userName}并没有在跟你说话，是你想主动找${userName}。像真人一样随意地发条消息吧，比如：随手拍了张照片想分享、刚看到个有趣的事想说、突然想到个冷知识、吐槽今天的天气/食物/见闻、或者就是单纯想找${userName}聊几句。不要刻意，不要像在"汇报近况"，就像你真的拿起手机随手发了条消息。一两句话就好。${timeSinceUser && parseInt(timeSinceUser) > 2 ? `（${userName}挺久没找你了，你也可以表达想念、好奇${userName}在干嘛、或者小小地抱怨一下。）` : ''}]`;
+                      : `[系统提示（非${userName}发言）: 现在是 ${timeStr}。${timeSinceUser ? `${userName}已经 ${timeSinceUser} 没有找你说话了。` : ''}这是系统给你的一次主动发消息机会——${userName}并没有在跟你说话，是你想主动找${userName}。像真人一样随意地发条消息吧，比如：随手拍了张照片想分享、刚看到个有趣的事想说、突然想到个冷知识、吐槽今天的天气/食物/见闻、或者就是单纯想找${userName}聊几句。不要刻意，不要像在"汇报近况"，就像你真的拿起手机随手发了条消息。一两句话就好。${timeSinceUser && parseInt(timeSinceUser) > 2 ? `（${userName}挺久没找你了，你也可以表达想念、好奇${userName}在干嘛、或者小小地抱怨一下。）` : ''}]${jiwenHint}`;
 
               await DB.saveMessage({
                   charId,
@@ -2608,6 +2650,8 @@ export const OSProvider: React.FC<{ children: React.ReactNode }> = ({ children }
               }
 
               if (offset > 0) {
+                  // 开口不是“被回复”：只做部分缓解，等用户下次真正发言时再归零。
+                  if (jiwen) await jiwen.applyDelta({ connection: -0.35 });
                   const previewSource = savedPreviewChunks.join(' ').trim();
                   const preview = previewSource.replace(/\s+/g, ' ').trim().slice(0, 120)
                       || `${char.name} sent a proactive message`;

@@ -17,7 +17,7 @@ interface NavigatorWithBattery extends Navigator {
   getBattery?: () => Promise<BatteryManager>;
 }
 
-const StatusBar: React.FC = () => {
+const StatusBar: React.FC<{ hidden?: boolean }> = ({ hidden = false }) => {
   const { virtualTime, theme, systemLogs, clearLogs } = useOS();
   const [batteryLevel, setBatteryLevel] = useState<number>(100);
   const [isCharging, setIsCharging] = useState<boolean>(false);
@@ -71,7 +71,7 @@ const StatusBar: React.FC = () => {
 
   // 三档状态栏布局；旧版 hideStatusBar 存档仍可解析。错误指示器与本设置无关，始终独立渲染。
   const statusBarMode = resolveStatusBarMode(theme.statusBarMode, theme.hideStatusBar);
-  const hideOsStatusBar = statusBarMode === 'hidden';
+  const hideOsStatusBar = hidden || statusBarMode === 'hidden';
   const compactStatusBar = statusBarMode === 'compact';
 
   return (

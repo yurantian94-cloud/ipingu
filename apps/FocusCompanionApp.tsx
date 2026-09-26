@@ -11,6 +11,7 @@ import type { FocusAudioCache, FocusSession, FocusSessionMode, FocusTask, FocusT
 import Live2DAvatarCanvas, { type Live2DActionTrigger } from '../components/call/Live2DAvatarCanvas';
 import type { AvatarMotionState } from '../components/call/VRMAvatarCanvas';
 import type { Live2DAvatarConfig } from '../utils/live2dModelStore';
+import type { AvatarStageFraming } from '../utils/avatarPerformance';
 import { CallAudioFeed } from '../utils/callAudioFeed';
 import type { AvatarTouchHit } from '../utils/avatarTouch';
 import { App as CapacitorApp } from '@capacitor/app';
@@ -138,7 +139,7 @@ const FocusTimerReadout = React.memo(({
 });
 
 const FocusCompanionApp: React.FC = () => {
-  const { closeApp, apiConfig, characters, activeCharacterId, addToast } = useOS();
+  const { closeApp, apiConfig, characters, activeCharacterId, addToast, updateCharacter } = useOS();
   const [focusCharacterId, setFocusCharacterId] = useState(() => localStorage.getItem('focus_companion_character_id') || activeCharacterId);
   const activeCharacter = characters.find(character => character.id === focusCharacterId)
     || characters.find(character => character.id === activeCharacterId)
@@ -191,7 +192,7 @@ const FocusCompanionApp: React.FC = () => {
   const [generatingAudio, setGeneratingAudio] = useState(false);
   const [noiseEnabled, setNoiseEnabled] = useState(true);
   const [focusScreenDark, setFocusScreenDark] = useState(false);
-  const [avatarPosition, setAvatarPosition] = useState(() => Number(localStorage.getItem('focus_avatar_position') || '0'));
+  const [focusAvatarFraming, setFocusAvatarFraming] = useState<AvatarStageFraming>({ scale: 1, offsetX: 0, offsetY: 0 });
   const [focusBackground, setFocusBackground] = useState(() => localStorage.getItem('focus_background') || 'night');
   const [sessionControlsVisible, setSessionControlsVisible] = useState(true);
   const [now, setNow] = useState(Date.now());
@@ -286,8 +287,20 @@ const FocusCompanionApp: React.FC = () => {
   }, [addToast]);
 
   useEffect(() => { void refresh(true); }, [refresh]);
-  useEffect(() => { try { localStorage.setItem('focus_avatar_position', String(avatarPosition)); } catch { /* private mode */ } }, [avatarPosition]);
+  useEffect(() => {
+    const framing = live2dConfig?.framing;
+    setFocusAvatarFraming({ scale: framing?.scale ?? 1, offsetX: framing?.offsetX ?? 0, offsetY: framing?.offsetY ?? 0 });
+  }, [live2dConfig?.assetId, live2dConfig?.framing?.scale, live2dConfig?.framing?.offsetX, live2dConfig?.framing?.offsetY]);
   useEffect(() => { try { localStorage.setItem('focus_background', focusBackground); } catch { /* private mode */ } }, [focusBackground]);
+
+  const updateFocusAvatarFraming = useCallback((patch: Partial<AvatarStageFraming>) => {
+    if (!activeCharacter || activeCharacter.videoAvatar?.format !== 'live2d') return;
+    const next = { ...focusAvatarFraming, ...patch };
+    setFocusAvatarFraming(next);
+    updateCharacter(activeCharacter.id, {
+      videoAvatar: { ...activeCharacter.videoAvatar, framing: next },
+    });
+  }, [activeCharacter, focusAvatarFraming, updateCharacter]);
   useEffect(() => {
     if (!activeCharacter) return;
     setFocusCharacterId(activeCharacter.id);
@@ -720,7 +733,7 @@ const FocusCompanionApp: React.FC = () => {
     const noTask = !selectedTask;
     if (running) return <main className="relative flex-1 overflow-hidden bg-slate-950 text-white" onClick={() => setSessionControlsVisible(value => !value)}>
       <div className={`absolute inset-0 ${focusScreenDark ? 'bg-black' : FOCUS_BACKGROUNDS[focusBackground] || FOCUS_BACKGROUNDS.night}`}>
-        {!focusScreenDark && live2dConfig && <div className="absolute inset-0" style={{ transform: `translateX(${avatarPosition * 12}%)` }}><Live2DAvatarCanvas config={live2dConfig} motionState={liveMotion} audioFeed={audioFeed} manualAction={talkTrigger} onAvatarTouch={handleAvatarTouch} preserveActiveWardrobe ambientAutonomyDisabled maxFps={30} /></div>}
+        {!focusScreenDark && live2dConfig && <div className="absolute inset-0"><Live2DAvatarCanvas config={live2dConfig} framing={focusAvatarFraming} motionState={liveMotion} audioFeed={audioFeed} manualAction={talkTrigger} onAvatarTouch={handleAvatarTouch} preserveActiveWardrobe ambientAutonomyDisabled maxFps={30} /></div>}
       </div>
       <div className="pointer-events-none absolute inset-0 flex flex-col justify-between bg-gradient-to-b from-black/45 via-transparent to-black/75 p-5 pb-[max(28px,env(safe-area-inset-bottom))]">
         <div className={`flex items-start justify-between transition-opacity ${sessionControlsVisible ? 'opacity-100' : 'opacity-0'}`}><div><p className="text-[10px] font-bold tracking-[.18em] text-white/60">VIDEO SUPERVISION</p><p className="mt-1 text-sm font-black">{selectedTask?.name}</p></div><button type="button" onClick={event => { event.stopPropagation(); setFocusScreenDark(value => !value); }} className="pointer-events-auto rounded-xl bg-white/15 px-3 py-2 text-[11px] font-bold backdrop-blur">{focusScreenDark ? '亮屏' : '熄屏'}</button></div>
@@ -733,7 +746,7 @@ const FocusCompanionApp: React.FC = () => {
       {focusScreenDark ? <header className="flex items-center justify-between bg-slate-950 px-4 pb-3 pt-[max(14px,env(safe-area-inset-top))] text-white"><button type="button" onClick={() => setFocusScreenDark(false)} className="rounded-xl bg-white/10 px-3 py-2 text-xs font-bold">退出熄屏</button><span className="text-xs font-bold tracking-[.18em] text-white/50">FOCUS</span><div className="w-16" /></header> : renderHeader('视频监督专注')}
       <main className={`min-h-0 flex-1 overflow-y-auto px-4 pb-8 ${focusScreenDark ? 'bg-slate-950 text-white' : ''}`}>
         <section className={`relative overflow-hidden rounded-[30px] ${focusScreenDark ? 'min-h-[460px] bg-black' : `${FOCUS_BACKGROUNDS[focusBackground] || FOCUS_BACKGROUNDS.night} shadow-[0_20px_42px_-24px_rgba(15,23,42,.9)]`}`}>
-          {!focusScreenDark && (live2dConfig ? <div className="absolute inset-0 transition-transform duration-300" style={{ transform: `translateX(${avatarPosition * 12}%)` }}><Live2DAvatarCanvas config={live2dConfig} motionState={liveMotion} audioFeed={audioFeed} manualAction={talkTrigger} onAvatarTouch={handleAvatarTouch} preserveActiveWardrobe ambientAutonomyDisabled maxFps={30} /></div> : <button type="button" onClick={() => setView('characters')} className="flex h-80 w-full flex-col items-center justify-center bg-transparent text-slate-300"><UserCircle size={58} weight="duotone" /><span className="mt-3 text-sm font-bold">选择 Live2D 监督角色</span><span className="mt-1 text-[11px] text-slate-400">点击即可预览与切换</span></button>)}
+          {!focusScreenDark && (live2dConfig ? <div className="absolute inset-0 transition-transform duration-300"><Live2DAvatarCanvas config={live2dConfig} framing={focusAvatarFraming} motionState={liveMotion} audioFeed={audioFeed} manualAction={talkTrigger} onAvatarTouch={handleAvatarTouch} preserveActiveWardrobe ambientAutonomyDisabled maxFps={30} /></div> : <button type="button" onClick={() => setView('characters')} className="flex h-80 w-full flex-col items-center justify-center bg-transparent text-slate-300"><UserCircle size={58} weight="duotone" /><span className="mt-3 text-sm font-bold">选择 Live2D 监督角色</span><span className="mt-1 text-[11px] text-slate-400">点击即可预览与切换</span></button>)}
           <div style={{ minHeight: focusScreenDark ? 460 : 320 }} className={`relative z-10 flex flex-col justify-end p-5 pb-12 ${focusScreenDark ? 'bg-black' : 'pointer-events-none bg-gradient-to-b from-slate-950/25 via-transparent to-slate-950/70'}`}>
             <div className="flex items-start justify-between"><div><p className="text-[10px] font-bold tracking-[.18em] text-white/60">{running ? 'SUPERVISION IN PROGRESS' : 'READY TO FOCUS'}</p><p className="mt-1 text-sm font-black">{selectedTask?.name || '还没有选择计划'}</p></div><button type="button" onClick={() => setFocusScreenDark(value => !value)} className="pointer-events-auto rounded-xl bg-white/15 px-2.5 py-2 text-[10px] font-bold text-white backdrop-blur">{focusScreenDark ? '亮屏模式' : '熄屏模式'}</button></div>
             <div className="mt-auto text-center"><FocusTimerReadout running={running} mode={mode} targetMinutes={targetMinutes} accumulatedRunMs={accumulatedRunMs} runStartedAt={runStartedAt} className="font-mono text-[clamp(3.8rem,18vw,5.6rem)] font-black leading-none tracking-[-.08em] text-white" /><p className="mt-3 text-xs text-white/60">{running ? (companionLine || '角色正在陪伴你完成这一段') : noTask ? '请先选择一个计划' : mode === 'COUNTDOWN' ? `${targetMinutes} 分钟倒计时` : '正计时模式'}</p></div>
@@ -742,7 +755,9 @@ const FocusCompanionApp: React.FC = () => {
         </section>
         <div className={`mt-3 rounded-2xl p-3 ${focusScreenDark ? 'bg-white/10' : 'bg-white/65'}`}>
           <div className="flex items-center justify-between"><span className="text-xs font-bold">监督画面</span><button type="button" onClick={() => setView('characters')} className="rounded-xl bg-blue-600 px-3 py-2 text-[11px] font-bold text-white">更换角色</button></div>
-          <div className="mt-3 flex items-center justify-between gap-2"><span className="text-[11px] text-slate-400">角色位置</span><div className="flex gap-1"><button type="button" onClick={() => setAvatarPosition(-1)} className={`rounded-lg px-2.5 py-1.5 text-xs font-bold ${avatarPosition === -1 ? 'bg-slate-800 text-white' : 'bg-white/70 text-slate-500'}`}>左</button><button type="button" onClick={() => setAvatarPosition(0)} className={`rounded-lg px-2.5 py-1.5 text-xs font-bold ${avatarPosition === 0 ? 'bg-slate-800 text-white' : 'bg-white/70 text-slate-500'}`}>中</button><button type="button" onClick={() => setAvatarPosition(1)} className={`rounded-lg px-2.5 py-1.5 text-xs font-bold ${avatarPosition === 1 ? 'bg-slate-800 text-white' : 'bg-white/70 text-slate-500'}`}>右</button></div></div>
+          <label className="mt-3 flex items-center gap-2"><span className="w-14 shrink-0 text-[11px] text-slate-400">左右</span><input aria-label="角色左右位置" type="range" min={-1.4} max={1.4} step={0.01} value={focusAvatarFraming.offsetX} onChange={event => updateFocusAvatarFraming({ offsetX: Number(event.target.value) })} className="h-1.5 flex-1 accent-blue-600" /><span className="w-10 text-right text-[10px] tabular-nums text-slate-400">{Math.round(focusAvatarFraming.offsetX * 100)}</span></label>
+          <label className="mt-2 flex items-center gap-2"><span className="w-14 shrink-0 text-[11px] text-slate-400">上下</span><input aria-label="角色上下位置" type="range" min={-3.2} max={3.2} step={0.01} value={focusAvatarFraming.offsetY} onChange={event => updateFocusAvatarFraming({ offsetY: Number(event.target.value) })} className="h-1.5 flex-1 accent-blue-600" /><span className="w-10 text-right text-[10px] tabular-nums text-slate-400">{Math.round(focusAvatarFraming.offsetY * 100)}</span></label>
+          <label className="mt-2 flex items-center gap-2"><span className="w-14 shrink-0 text-[11px] text-slate-400">放大</span><input aria-label="角色放大倍数" type="range" min={0.55} max={20} step={0.01} value={focusAvatarFraming.scale} onChange={event => updateFocusAvatarFraming({ scale: Number(event.target.value) })} className="h-1.5 flex-1 accent-violet-600" /><span className="w-10 text-right text-[10px] tabular-nums text-slate-400">{focusAvatarFraming.scale.toFixed(2)}x</span></label>
           <div className="mt-2 flex items-center justify-between gap-2"><span className="text-[11px] text-slate-400">背景</span><div className="flex gap-1">{[['night', '夜蓝'], ['study', '书房'], ['dawn', '晨光']].map(([id, label]) => <button type="button" key={id} onClick={() => setFocusBackground(id)} className={`rounded-lg px-2.5 py-1.5 text-xs font-bold ${focusBackground === id ? 'bg-blue-600 text-white' : 'bg-white/70 text-slate-500'}`}>{label}</button>)}</div></div>
         </div>
         {!running && mode === 'COUNTDOWN' && <button type="button" onClick={() => setTimeEditorOpen(value => !value)} className={`mt-3 w-full rounded-2xl px-4 py-3 text-xs font-bold ${focusScreenDark ? 'bg-white/10 text-white' : 'bg-white/70 text-slate-600'}`}>本次目标：{targetMinutes} 分钟 · 点击调整</button>}

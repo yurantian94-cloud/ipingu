@@ -33,6 +33,7 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
     const [secKey, setSecKey] = useState(saved?.secondaryApi?.apiKey ?? '');
     const [secModel, setSecModel] = useState(saved?.secondaryApi?.model ?? '');
     const [showApiSection, setShowApiSection] = useState(saved?.useSecondaryApi ?? false);
+    const [jiwenEnabled, setJiwenEnabled] = useState(saved?.jiwen?.enabled ?? false);
 
     // Reset form when modal opens with new char data
     useEffect(() => {
@@ -45,6 +46,7 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
             setSecKey(s?.secondaryApi?.apiKey ?? '');
             setSecModel(s?.secondaryApi?.model ?? '');
             setShowApiSection(s?.useSecondaryApi ?? false);
+            setJiwenEnabled(s?.jiwen?.enabled ?? false);
         }
     }, [isOpen, char.id]);
 
@@ -58,6 +60,7 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                 apiKey: secKey,
                 model: secModel,
             } : undefined,
+            jiwen: { enabled: jiwenEnabled },
         });
         onClose();
     };
@@ -112,6 +115,21 @@ const ProactiveSettingsModal: React.FC<ProactiveSettingsModalProps> = ({
                 {/* Interval Selection */}
                 {enabled && (
                     <>
+                        <div className="pt-2 border-t border-slate-100">
+                            <div className="flex items-center justify-between mb-1">
+                                <span className="text-sm font-bold text-slate-700">积温主动意识</span>
+                                <button
+                                    onClick={() => setJiwenEnabled(!jiwenEnabled)}
+                                    className={`w-12 h-7 rounded-full transition-colors relative ${jiwenEnabled ? 'bg-violet-500' : 'bg-slate-200'}`}
+                                >
+                                    <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-all duration-200 ${jiwenEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                                </button>
+                            </div>
+                            <p className="text-[11px] text-slate-400 leading-relaxed">
+                                开启后，角色会先根据“想念、骄傲、心情、焦躁、沉浸”判断是否真的想找你，不再每次到点都发。
+                            </p>
+                        </div>
+
                         <div>
                             <label className="text-sm font-bold text-slate-700 block mb-2">发送间隔</label>
                             <div className="grid grid-cols-3 gap-2">

@@ -100,9 +100,9 @@ const normalizeStageFraming = (value?: AvatarStageFraming): AvatarStageFraming =
   // Imported/legacy profiles occasionally contain a stale NaN or an extreme
   // scale. Letting that value enter the per-frame lerp creates the apparent
   // endless zoom/read loop in the companion stage.
-  scale: Number.isFinite(value?.scale) ? Math.max(0.35, Math.min(2.5, value!.scale)) : 1,
-  offsetX: Number.isFinite(value?.offsetX) ? clamp(value!.offsetX, -1, 1) : 0,
-  offsetY: Number.isFinite(value?.offsetY) ? clamp(value!.offsetY, -1, 1) : 0,
+  scale: Number.isFinite(value?.scale) ? Math.max(0.35, Math.min(20, value!.scale)) : 1,
+  offsetX: Number.isFinite(value?.offsetX) ? clamp(value!.offsetX, -1.4, 1.4) : 0,
+  offsetY: Number.isFinite(value?.offsetY) ? clamp(value!.offsetY, -3.2, 3.2) : 0,
 });
 const TOUCH_REGION_COLORS: Record<AvatarTouchZone, string> = {
   head: '#f5c86a',
@@ -1523,10 +1523,11 @@ const Live2DAvatarCanvas: React.FC<Live2DAvatarCanvasProps> = ({
           const frame = autonomy.frame;
           const requestedScale = base.scale * framing.scale * cameraScale * (1 + frame.lean * 0.45);
           // Keep runtime camera/autonomy from compounding a malformed profile
-          // into an unbounded scale. Framing is user-controlled, but still
-          // bounded so one bad imported value cannot make the model grow forever.
+          // into an unbounded scale. The framing slider is user-controlled and
+          // supports the full 20x range, so the safety cap must match that
+          // range instead of silently stopping at 2.5x.
           const targetScale = base.scale > 0
-            ? Math.max(base.scale * 0.35, Math.min(base.scale * 2.5, requestedScale))
+            ? Math.max(base.scale * 0.35, Math.min(base.scale * 20, requestedScale))
             : requestedScale;
           // 呼吸 / lift / lean 的位移必须并进目标位置再做平滑。旧写法把它们
           // 加在 lerp 之后，相当于每帧注入增量、平衡点被放大 1/0.08 ≈ 12.5 倍，

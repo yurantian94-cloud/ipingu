@@ -25,7 +25,7 @@ import { getBlobForRef, isImageValue, migrateDataUrlToRef, putImageBlob, useBlob
 import { buildReplySnapshotContent } from '../utils/applyAssistantPostProcessing';
 import { resolveLifeRecordCard } from '../utils/lifeRecords';
 import { GalleryStore } from '../utils/galleryStore';
-import { generateGalleryImage, readConfiguredImageGenerator } from '../utils/imageGenerator';
+import { generateImage, readConfiguredImageGenerator } from '../utils/imageGenerator';
 import { isMcdConfigured } from '../utils/mcdMcpClient';
 import { isMcdActivatedInMessages, MCD_ACTIVATE_TRIGGER, MCD_DEACTIVATE_TRIGGER } from '../utils/mcdToolBridge';
 import { isLuckinConfigured } from '../utils/luckinMcpClient';
@@ -1726,15 +1726,11 @@ const Chat: React.FC = () => {
                 // 老聊天记录没有预览图时才补走一次旧兼容流程。
                 let imageBlob = gift.previewImageRef ? await getBlobForRef(String(gift.previewImageRef)) : null;
                 if (!imageBlob) {
-                    try {
-                        const imageApi = readConfiguredImageGenerator();
-                        if (!imageApi.enabled || !imageApi.baseUrl) throw new Error('生图 API 未启用');
-                        imageBlob = await generateGalleryImage(String(gift.collectionDescription || gift.coreItem || gift.title), imageApi);
-                    } catch {
-                        const fallback = await fetch('/starlight-first-chat.png');
-                        if (!fallback.ok) throw new Error('测试纪念品图片不存在');
-                        imageBlob = await fallback.blob();
-                    }
+                    if (gift.previewError) throw new Error(String(gift.previewError));
+                    const imageApi = readConfiguredImageGenerator();
+                    if (!imageApi.enabled || !imageApi.baseUrl) throw new Error('生图 API 未启用');
+                    // 兼容很早以前没有预览图的记录；仍然使用统一生图 API，成功后才入馆。
+                    imageBlob = await generateImage(String(gift.collectionDescription || gift.coreItem || gift.title), { ...imageApi, size: imageApi.gallerySize });
                 }
                 await GalleryStore.add({ id: String(gift.giftId), type: 'GIFT', title: String(gift.title || '神秘礼物'), description: String(gift.message || ''), coreItem: String(gift.coreItem || ''), charId: char.id, imageBlob });
             }
@@ -3679,6 +3675,41 @@ const Chat: React.FC = () => {
                  .sully-chat-inputbar textarea,.sully-chat-inputbar button{pointer-events:auto!important;visibility:visible!important;}
                `}</style>
              )}
+
+             {/* 窄屏紧凑模式：手机上收掉顶部和底部多余留白，把空间还给消息正文。
+                 只改布局，不改用户选择的配色、气泡或字体；按钮仍保持可触摸尺寸。 */}
+             <style>{`
+               @media (max-width: 480px) {
+                 .sully-chat-header {
+                   min-height: 4.5rem !important;
+                   padding-left: 0.75rem !important;
+                   padding-right: 0.75rem !important;
+                   padding-bottom: 0.375rem !important;
+                 }
+                 .sully-chat-header > .relative { min-height: 2.75rem !important; }
+                 .sully-chat-header .sully-chat-avatar {
+                   width: 2.25rem !important;
+                   height: 2.25rem !important;
+                 }
+                 .sully-chat-composer {
+                   gap: 0.5rem !important;
+                   padding: 0.5rem 0.75rem !important;
+                 }
+                 .sully-chat-actions-button,
+                 .sully-chat-send-button,
+                 .sully-chat-input-wrap { min-height: 2.75rem !important; }
+                 .sully-chat-actions-button,
+                 .sully-chat-send-button { min-width: 2.75rem !important; }
+                 .sully-chat-textarea {
+                   padding-top: 0.625rem !important;
+                   padding-bottom: 0.625rem !important;
+                 }
+                 .sully-chat-inputbar .sully-chat-emoji-suggestions {
+                   padding-top: 0.375rem !important;
+                   padding-bottom: 0.375rem !important;
+                 }
+               }
+             `}</style>
 
              {/* 动森彩蛋：作用域 CSS 覆盖气泡——奶油 AI 气泡 + 蜜桃用户气泡，暖棕文字，绕开 MessageItem 复杂逻辑 */}
              {acnh && <style>{`

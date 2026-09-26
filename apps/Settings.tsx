@@ -3,6 +3,7 @@ import { useFirstUseGuideStep } from '../utils/firstUseGuide';
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useOS } from '../context/OSContext';
 import { Capacitor } from '@capacitor/core';
+import { getScreenTimeStatus, isScreenTimeEnabled, isScreenTimePlatform, openScreenTimeSettings, setScreenTimeEnabled } from '../utils/screenTime';
 import { extractContent, safeResponseJson } from '../utils/safeApi';
 import { extractModelIds, normalizeModelIds } from '../utils/modelList';
 import { shareOrDownloadBlob } from '../utils/shareExport';
@@ -46,11 +47,11 @@ import {
     type AvatarModelBackupInventory,
     type AvatarModelBackupProgress,
 } from '../utils/avatarModelBackup';
-import { normalizeApiBaseUrl, normalizeApiCredential, normalizeApiModel } from '../utils/apiConfigNormalize';
+import { normalizeApiBaseUrl, normalizeApiCredential, normalizeApiModel, normalizeSquareImageSize } from '../utils/apiConfigNormalize';
 import { configFromPreset, findActivePresetId, type PresetSwitchPatch } from '../utils/apiPresetSwitch';
 import type { APIConfig, TtsProvider } from '../types';
 import { describeImageWithVisionApi, VISION_API_TEST_IMAGE_DATA_URL, visionApiConfigFromPreset } from '../utils/visionApi';
-import { fetchImageModels, generateGalleryImage, type ImageApiProtocol } from '../utils/imageGenerator';
+import { fetchImageModels, generateImage, type ImageApiProtocol } from '../utils/imageGenerator';
 import {
     createImageApiProfile,
     readActiveImageApiProfileId,
@@ -527,8 +528,9 @@ const Settings: React.FC = () => {
   const [localImageKey, setLocalImageKey] = useState(apiConfig.imageApi?.apiKey || '');
   const [localImageModel, setLocalImageModel] = useState(apiConfig.imageApi?.model || 'gpt-image-1');
   const [localImageSize, setLocalImageSize] = useState(apiConfig.imageApi?.size || '1024x1024');
+  const [localGalleryImageSize, setLocalGalleryImageSize] = useState(apiConfig.imageApi?.gallerySize || '1024x1024');
   const [localImageQuality, setLocalImageQuality] = useState(apiConfig.imageApi?.quality || 'auto');
-  const [localImageProtocol, setLocalImageProtocol] = useState<ImageApiProtocol>(apiConfig.imageApi?.protocol === 'legacy-worker' ? 'legacy-worker' : apiConfig.imageApi?.protocol === 'local-dream' ? 'local-dream' : 'openai-compatible');
+  const [localImageProtocol, setLocalImageProtocol] = useState<ImageApiProtocol>(apiConfig.imageApi?.protocol === 'legacy-worker' ? 'legacy-worker' : 'openai-compatible');
   const [availableImageModels, setAvailableImageModels] = useState<string[]>(readStoredImageModels);
   const [availableVisionModels, setAvailableVisionModels] = useState<string[]>(readStoredVisionModels);
   const [selectedVisionPresetId, setSelectedVisionPresetId] = useState<string | null>(null);
@@ -545,11 +547,12 @@ const Settings: React.FC = () => {
   const [editingImageProfileId, setEditingImageProfileId] = useState<string | null>(null);
   const [imagePresetEnabled, setImagePresetEnabled] = useState(true);
   const [imagePresetName, setImagePresetName] = useState('');
-  const [imagePresetProtocol, setImagePresetProtocol] = useState<ImageApiProtocol>('local-dream');
-  const [imagePresetUrl, setImagePresetUrl] = useState('http://127.0.0.1:8081');
+  const [imagePresetProtocol, setImagePresetProtocol] = useState<ImageApiProtocol>('openai-compatible');
+  const [imagePresetUrl, setImagePresetUrl] = useState('');
   const [imagePresetKey, setImagePresetKey] = useState('');
-  const [imagePresetModel, setImagePresetModel] = useState('sd15-local');
-  const [imagePresetSize, setImagePresetSize] = useState('512x512');
+  const [imagePresetModel, setImagePresetModel] = useState('gpt-image-1');
+  const [imagePresetSize, setImagePresetSize] = useState('1024x1024');
+  const [imagePresetGallerySize, setImagePresetGallerySize] = useState('1024x1024');
   const [imagePresetQuality, setImagePresetQuality] = useState('auto');
   const [localMiniMaxKey, setLocalMiniMaxKey] = useState(apiConfig.minimaxApiKey || '');
   const [localMiniMaxGroupId, setLocalMiniMaxGroupId] = useState(apiConfig.minimaxGroupId || '');
@@ -610,6 +613,9 @@ const Settings: React.FC = () => {
   const [showRealtimeModal, setShowRealtimeModal] = useState(false);
   const [showMcpModal, setShowMcpModal] = useState(false);
   const [showMcpHelp, setShowMcpHelp] = useState(false);
+  const [screenTimeEnabled, setScreenTimeEnabledState] = useState(() => isScreenTimeEnabled());
+  const [screenTimeAccess, setScreenTimeAccess] = useState(false);
+  const [screenTimeChecking, setScreenTimeChecking] = useState(false);
   const [showCloudModal, setShowCloudModal] = useState(false);
   const [showGithubModal, setShowGithubModal] = useState(false);
   const [showCloudRestoreModal, setShowCloudRestoreModal] = useState(false);
@@ -691,6 +697,43 @@ const Settings: React.FC = () => {
       });
       return () => window.cancelAnimationFrame(frame);
   }, [focusProxyConfigOnMount, showProxyConfig]);
+
+  useEffect(() => {
+      if (!isScreenTimePlatform()) return;
+      let active = true;
+      getScreenTimeStatus().then(status => { if (active) setScreenTimeAccess(status.hasUsageAccess); }).catch(() => {});
+      return () => { active = false; };
+  }, []);
+
+  const enableScreenTime = async () => {
+      if (!isScreenTimePlatform()) {
+          addToast('屏幕使用时间只支持 Android App', 'info');
+          return;
+      }
+      setScreenTimeChecking(true);
+      try {
+          const status = await getScreenTimeStatus();
+          if (!status.hasUsageAccess) {
+              await openScreenTimeSettings();
+              addToast('请在系统页面打开 SullyOS 的“使用情况访问权限”，再回来点一次检查', 'info');
+              return;
+          }
+          setScreenTimeEnabled(true);
+          setScreenTimeEnabledState(true);
+          setScreenTimeAccess(true);
+          addToast('屏幕使用时间已开启，角色现在可以按需读取', 'success');
+      } catch (error: any) {
+          addToast(error?.message || '打开权限设置失败', 'error');
+      } finally {
+          setScreenTimeChecking(false);
+      }
+  };
+
+  const disableScreenTime = () => {
+      setScreenTimeEnabled(false);
+      setScreenTimeEnabledState(false);
+      addToast('屏幕使用时间已关闭', 'info');
+  };
 
   // 每次打开实时感知面板时查余额，不消耗抓取 credit。失败不影响其他配置。
   useEffect(() => {
@@ -1010,9 +1053,10 @@ const Settings: React.FC = () => {
       setLocalImageKey(apiConfig.imageApi?.apiKey || '');
       setLocalImageModel(apiConfig.imageApi?.model || 'gpt-image-1');
       setLocalImageSize(apiConfig.imageApi?.size || '1024x1024');
+      setLocalGalleryImageSize(apiConfig.imageApi?.gallerySize || '1024x1024');
       setLocalImageQuality(apiConfig.imageApi?.quality || 'auto');
-    setLocalImageProtocol(apiConfig.imageApi?.protocol === 'legacy-worker' ? 'legacy-worker' : apiConfig.imageApi?.protocol === 'local-dream' ? 'local-dream' : 'openai-compatible');
-  }, [apiConfig.imageApi?.enabled, apiConfig.imageApi?.baseUrl || '', apiConfig.imageApi?.apiKey || '', apiConfig.imageApi?.model || '', apiConfig.imageApi?.size || '', apiConfig.imageApi?.quality || '', apiConfig.imageApi?.protocol || '']);
+    setLocalImageProtocol(apiConfig.imageApi?.protocol === 'legacy-worker' ? 'legacy-worker' : 'openai-compatible');
+  }, [apiConfig.imageApi?.enabled, apiConfig.imageApi?.baseUrl || '', apiConfig.imageApi?.apiKey || '', apiConfig.imageApi?.model || '', apiConfig.imageApi?.size || '', apiConfig.imageApi?.gallerySize || '', apiConfig.imageApi?.quality || '', apiConfig.imageApi?.protocol || '']);
 
   useEffect(() => {
       setLocalMiniMaxKey(apiConfig.minimaxApiKey || '');
@@ -1260,6 +1304,7 @@ const Settings: React.FC = () => {
     apiKey: normalizeApiCredential(localImageKey),
     model: normalizeApiModel(localImageModel),
     size: normalizeApiModel(localImageSize) || '1024x1024',
+    gallerySize: normalizeSquareImageSize(localGalleryImageSize),
     quality: normalizeApiModel(localImageQuality) || 'auto',
     protocol: localImageProtocol,
   });
@@ -1279,6 +1324,7 @@ const Settings: React.FC = () => {
     setLocalImageKey(config.apiKey || '');
     setLocalImageModel(config.model || '');
     setLocalImageSize(config.size || '1024x1024');
+    setLocalGalleryImageSize(config.gallerySize || '1024x1024');
     setLocalImageQuality(config.quality || 'auto');
     setLocalImageProtocol(config.protocol);
     // 只更新 imageApi 这一项，主聊天 API 和其它设置保持原样。
@@ -1287,20 +1333,6 @@ const Settings: React.FC = () => {
     setTimeout(() => setImageStatusMsg(''), 1800);
   };
 
-  // 旧版本如果只是空白的默认生图配置，首次打开设置时升级为 Local Dream；
-  // 已填写过远程地址/Key 的用户不会被覆盖。
-  useEffect(() => {
-    const current = apiConfig.imageApi;
-    const active = imageApiProfiles.find(profile => profile.id === activeImageProfileId);
-    const isBlankOldConfig = current
-      && current.protocol === 'openai-compatible'
-      && !current.baseUrl
-      && !current.apiKey
-      && (!current.model || current.model === 'gpt-image-1');
-    if (active?.config.protocol === 'local-dream' && isBlankOldConfig) applyImageProfile(active);
-    // 只在首次进入时做一次迁移；后续切换方案由用户明确操作。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const openImagePresetModal = () => {
     const current = getImageFormConfig();
@@ -1308,10 +1340,11 @@ const Settings: React.FC = () => {
     setImagePresetEnabled(current?.enabled === true);
     setImagePresetName('');
     setImagePresetProtocol(current.protocol);
-    setImagePresetUrl(current.baseUrl || (current.protocol === 'local-dream' ? 'http://127.0.0.1:8081' : ''));
+    setImagePresetUrl(current.baseUrl || '');
     setImagePresetKey(current.apiKey || '');
-    setImagePresetModel(current.model || (current.protocol === 'local-dream' ? 'sd15-local' : ''));
-    setImagePresetSize(current.size || '512x512');
+    setImagePresetModel(current.model || '');
+    setImagePresetSize(current.size || '1024x1024');
+    setImagePresetGallerySize(current.gallerySize || '1024x1024');
     setImagePresetQuality(current.quality || 'auto');
     setShowImagePresetModal(true);
   };
@@ -1324,7 +1357,8 @@ const Settings: React.FC = () => {
     setImagePresetUrl(profile.config.baseUrl || '');
     setImagePresetKey(profile.config.apiKey || '');
     setImagePresetModel(profile.config.model || '');
-    setImagePresetSize(profile.config.size || '512x512');
+    setImagePresetSize(profile.config.size || '1024x1024');
+    setImagePresetGallerySize(profile.config.gallerySize || '1024x1024');
     setImagePresetQuality(profile.config.quality || 'auto');
     setShowImagePresetModal(true);
     setImageProfileActionId(null);
@@ -1370,6 +1404,7 @@ const Settings: React.FC = () => {
       apiKey: normalizeApiCredential(imagePresetKey),
       model: normalizeApiModel(imagePresetModel),
       size: normalizeApiModel(imagePresetSize) || '1024x1024',
+      gallerySize: normalizeSquareImageSize(imagePresetGallerySize),
       quality: normalizeApiModel(imagePresetQuality) || 'auto',
       protocol: imagePresetProtocol,
     } as const;
@@ -1410,10 +1445,11 @@ const Settings: React.FC = () => {
       apiKey: normalizeApiCredential(localImageKey),
       model: normalizeApiModel(localImageModel),
       size: normalizeApiModel(localImageSize) || '1024x1024',
+      gallerySize: normalizeSquareImageSize(localGalleryImageSize),
       quality: normalizeApiModel(localImageQuality) || 'auto',
       protocol: localImageProtocol,
     } as const;
-    if (enabled && (localImageProtocol !== 'local-dream' && (!nextImageApi.baseUrl || !nextImageApi.apiKey || !nextImageApi.model))) {
+    if (enabled && (!nextImageApi.baseUrl || !nextImageApi.apiKey || !nextImageApi.model)) {
       addToast('开启生图 API 前，请填写服务地址、Key 和模型', 'error');
       return;
     }
@@ -1421,6 +1457,7 @@ const Settings: React.FC = () => {
     setLocalImageKey(nextImageApi.apiKey);
     setLocalImageModel(nextImageApi.model);
     setLocalImageSize(nextImageApi.size);
+    setLocalGalleryImageSize(nextImageApi.gallerySize);
     setLocalImageQuality(nextImageApi.quality);
     updateApiConfig({ imageApi: nextImageApi });
     updateActiveImageProfile(nextImageApi);
@@ -1430,7 +1467,7 @@ const Settings: React.FC = () => {
 
   const handleToggleImageApi = () => {
     const enabled = !localImageEnabled;
-    if (enabled && localImageProtocol !== 'local-dream' && (!normalizeApiBaseUrl(localImageUrl) || !normalizeApiCredential(localImageKey) || !normalizeApiModel(localImageModel))) {
+    if (enabled && (!normalizeApiBaseUrl(localImageUrl) || !normalizeApiCredential(localImageKey) || !normalizeApiModel(localImageModel))) {
       setImageStatusMsg('请填写服务地址、Key 和模型，保存后再开启');
       return;
     }
@@ -1440,7 +1477,7 @@ const Settings: React.FC = () => {
 
   const handleFetchImageModels = async () => {
     if (localImageProtocol !== 'openai-compatible') {
-      setImageStatusMsg(localImageProtocol === 'local-dream' ? 'Local Dream 的模型在手机 App 内选择，不需要在这里获取' : '旧 Worker 接口没有统一的模型列表，请直接手动填写模型名');
+      setImageStatusMsg('旧 Worker 接口没有统一的模型列表，请直接手动填写模型名');
       return;
     }
     const baseUrl = normalizeApiBaseUrl(localImageUrl);
@@ -1477,14 +1514,14 @@ const Settings: React.FC = () => {
       quality: normalizeApiModel(localImageQuality) || 'auto',
       protocol: localImageProtocol,
     } as const;
-    if (localImageProtocol !== 'local-dream' && (!config.baseUrl || !config.apiKey || !config.model)) {
+    if (!config.baseUrl || !config.apiKey || !config.model) {
       setImageTestResult('❌ 请先填写服务地址、Key 和模型');
       return;
     }
     setTestingImageApi(true);
     setImageTestResult(null);
     try {
-      const image = await generateGalleryImage('a small glowing five-pointed star, simple icon, no words', config);
+      const image = await generateImage('a small glowing five-pointed star, simple icon, no words', config);
       if (!image.size) throw new Error('图片内容为空');
       setImageTestResult(`✅ 生图成功，收到 ${(image.size / 1024).toFixed(0)} KB 图片`);
     } catch (error: any) {
@@ -3077,7 +3114,7 @@ const Settings: React.FC = () => {
                         <div key={profile.id} className={`flex items-center gap-3 rounded-2xl border px-3 py-3 ${activeImageProfileId === profile.id ? 'border-pink-200 bg-pink-50' : 'border-slate-200 bg-white'}`}>
                             <button type="button" onClick={() => applyImageProfile(profile)} className="min-w-0 flex-1 text-left">
                                 <div className="flex items-center gap-2"><span className="grid h-8 w-8 place-items-center rounded-xl bg-pink-100 text-pink-600">✦</span><span className="truncate text-xs font-bold text-slate-700">{profile.name}</span>{activeImageProfileId === profile.id && <span className="rounded-full bg-pink-200 px-1.5 py-0.5 text-[8px] font-bold text-pink-700">使用中</span>}</div>
-                                <p className="mt-1 truncate pl-10 text-[10px] font-mono text-slate-400">{profile.config.protocol === 'local-dream' ? 'Local Dream（本机）' : profile.config.protocol === 'legacy-worker' ? '旧自定义 Worker' : 'OpenAI 兼容'} · {profile.config.protocol === 'local-dream' ? '由 App 选模型' : (profile.config.model || '未填写模型')}</p>
+                                <p className="mt-1 truncate pl-10 text-[10px] font-mono text-slate-400">{profile.config.protocol === 'legacy-worker' ? '旧自定义 Worker' : 'OpenAI 兼容'} · {profile.config.model || '未填写模型'}</p>
                             </button>
                             <button type="button" aria-label={`管理生图方案 ${profile.name}`} onClick={() => setImageProfileActionId(profile.id)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600">⋮</button>
                         </div>
@@ -3490,6 +3527,31 @@ const Settings: React.FC = () => {
                     小红书
                 </div>
             </div>
+        </SettingsSection>
+
+        <SettingsSection
+            title="屏幕使用时间（Android）"
+            icon={<div className="p-2 bg-sky-100/60 rounded-xl text-sky-600"><span className="text-sm">⏱️</span></div>}
+            actions={<span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${screenTimeEnabled ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>{screenTimeEnabled ? '已开启' : '未开启'}</span>}
+        >
+            <p className="text-xs text-slate-500 leading-relaxed mb-3">
+                允许角色按需查看最近几天各应用用了多久。只读取 Android 的统计数字，不读取屏幕内容、短信或通知。
+            </p>
+            {!isScreenTimePlatform() ? (
+                <p className="text-[11px] text-slate-400 bg-slate-50 rounded-xl px-3 py-2">请在打包后的 Android App 中使用。</p>
+            ) : screenTimeEnabled ? (
+                <div className="flex gap-2">
+                    <button type="button" onClick={enableScreenTime} disabled={screenTimeChecking} className="flex-1 py-2.5 rounded-xl bg-sky-500 text-white text-xs font-bold disabled:opacity-60">
+                        {screenTimeChecking ? '检查中…' : (screenTimeAccess ? '检查授权状态' : '重新授权')}
+                    </button>
+                    <button type="button" onClick={disableScreenTime} className="px-4 py-2.5 rounded-xl bg-slate-100 text-slate-600 text-xs font-bold">关闭</button>
+                </div>
+            ) : (
+                <button type="button" onClick={enableScreenTime} disabled={screenTimeChecking} className="w-full py-2.5 rounded-xl bg-sky-500 text-white text-xs font-bold shadow-sm disabled:opacity-60">
+                    {screenTimeChecking ? '正在检查…' : '开启并授权 →'}
+                </button>
+            )}
+            {isScreenTimePlatform() && !screenTimeAccess && <p className="text-[10px] text-amber-600 mt-2">还没有系统授权。点上面的按钮后，在 Android 设置里打开 SullyOS。</p>}
         </SettingsSection>
 
         {/* 通用 MCP，独立于实时感知 */}
@@ -4442,7 +4504,7 @@ const Settings: React.FC = () => {
           <div className="space-y-3 max-h-[65vh] overflow-y-auto">
               <div>
                   <label className="text-[10px] font-bold text-slate-400">预设名称</label>
-                  <input value={imagePresetName} onChange={e => setImagePresetName(e.target.value)} autoFocus placeholder="例如：本机 Local Dream / 我的 NewAPI" className="mt-1 w-full bg-slate-100 rounded-xl px-4 py-3 text-sm" />
+                  <input value={imagePresetName} onChange={e => setImagePresetName(e.target.value)} autoFocus placeholder="例如：我的 NewAPI / 我的生图服务" className="mt-1 w-full bg-slate-100 rounded-xl px-4 py-3 text-sm" />
               </div>
               <div className="flex items-center justify-between rounded-xl bg-pink-50 px-3 py-2.5">
                   <div>
@@ -4453,19 +4515,20 @@ const Settings: React.FC = () => {
                       <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${imagePresetEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
                   </button>
               </div>
-              <label className="text-[10px] font-bold text-slate-400">接口格式<select value={imagePresetProtocol} onChange={e => { const value = e.target.value as ImageApiProtocol; setImagePresetProtocol(value); if (value === 'local-dream') { setImagePresetUrl('http://127.0.0.1:8081'); setImagePresetModel('sd15-local'); setImagePresetSize('512x512'); } }} className="mt-1 w-full bg-slate-100 rounded-xl px-3 py-2.5 text-xs"><option value="local-dream">Local Dream（本机）</option><option value="openai-compatible">NewAPI / OpenAI 兼容</option><option value="legacy-worker">旧自定义 Worker</option></select></label>
+              <label className="text-[10px] font-bold text-slate-400">接口格式<select value={imagePresetProtocol} onChange={e => setImagePresetProtocol(e.target.value as ImageApiProtocol)} className="mt-1 w-full bg-slate-100 rounded-xl px-3 py-2.5 text-xs"><option value="openai-compatible">NewAPI / OpenAI 兼容</option><option value="legacy-worker">旧自定义 Worker</option></select></label>
               <label className="text-[10px] font-bold text-slate-400">服务地址<input value={imagePresetUrl} onChange={e => setImagePresetUrl(e.target.value)} placeholder="生图服务地址" className="mt-1 w-full bg-slate-100 rounded-xl px-3 py-2.5 text-xs font-mono" /></label>
-              {imagePresetProtocol !== 'local-dream' && <label className="text-[10px] font-bold text-slate-400">API Key<input type="password" value={imagePresetKey} onChange={e => setImagePresetKey(e.target.value)} placeholder="生图 API Key" className="mt-1 w-full bg-slate-100 rounded-xl px-3 py-2.5 text-xs font-mono" /></label>}
+              <label className="text-[10px] font-bold text-slate-400">API Key<input type="password" value={imagePresetKey} onChange={e => setImagePresetKey(e.target.value)} placeholder="生图 API Key" className="mt-1 w-full bg-slate-100 rounded-xl px-3 py-2.5 text-xs font-mono" /></label>
               <div>
                   <div className="flex items-center justify-between gap-2">
                       <label className="text-[10px] font-bold text-slate-400">模型</label>
                       <button type="button" onClick={handleFetchImagePresetModels} disabled={isLoadingImageModels || imagePresetProtocol !== 'openai-compatible'} className="text-[10px] font-bold text-pink-600 disabled:text-slate-300">{isLoadingImageModels ? '获取中…' : '拉取模型'}</button>
                   </div>
-                  <input value={imagePresetModel} onChange={e => setImagePresetModel(e.target.value)} disabled={imagePresetProtocol === 'local-dream'} placeholder="例如：gpt-image-1 / flux" className="mt-1 w-full bg-slate-100 rounded-xl px-3 py-2.5 text-xs font-mono disabled:text-slate-400" />
+                  <input value={imagePresetModel} onChange={e => setImagePresetModel(e.target.value)} placeholder="例如：gpt-image-1 / flux" className="mt-1 w-full bg-slate-100 rounded-xl px-3 py-2.5 text-xs font-mono" />
                   {availableImageModels.length > 0 && imagePresetProtocol === 'openai-compatible' && <select value={availableImageModels.includes(imagePresetModel) ? imagePresetModel : ''} onChange={e => e.target.value && setImagePresetModel(e.target.value)} className="mt-2 w-full bg-slate-100 rounded-xl px-3 py-2.5 text-xs"><option value="">从已拉取模型中选择</option>{availableImageModels.map(model => <option value={model} key={model}>{model}</option>)}</select>}
               </div>
-              <label className="text-[10px] font-bold text-slate-400">尺寸<select value={imagePresetSize} onChange={e => setImagePresetSize(e.target.value)} className="mt-1 w-full bg-slate-100 rounded-xl px-3 py-2.5 text-xs"><option value="512x512">512 × 512</option><option value="1024x1024">1024 × 1024</option><option value="1536x1024">1536 × 1024</option><option value="1024x1536">1024 × 1536</option></select></label>
-              {imagePresetProtocol !== 'local-dream' && <label className="text-[10px] font-bold text-slate-400">质量<select value={imagePresetQuality} onChange={e => setImagePresetQuality(e.target.value)} className="mt-1 w-full bg-slate-100 rounded-xl px-3 py-2.5 text-xs"><option value="auto">自动</option><option value="low">低</option><option value="medium">中</option><option value="high">高</option><option value="standard">标准（DALL·E）</option><option value="hd">HD（DALL·E）</option></select></label>}
+              <label className="text-[10px] font-bold text-slate-400">尺寸<select value={imagePresetSize} onChange={e => setImagePresetSize(e.target.value)} className="mt-1 w-full bg-slate-100 rounded-xl px-3 py-2.5 text-xs"><option value="1024x1024">1024 × 1024</option><option value="1536x1024">1536 × 1024</option><option value="1024x1536">1024 × 1536</option></select></label>
+              <label className="text-[10px] font-bold text-slate-400">星光纪念馆尺寸<select value={imagePresetGallerySize} onChange={e => setImagePresetGallerySize(e.target.value)} className="mt-1 w-full bg-slate-100 rounded-xl px-3 py-2.5 text-xs"><option value="512x512">512 × 512</option><option value="768x768">768 × 768</option><option value="1024x1024">1024 × 1024</option><option value="1536x1536">1536 × 1536</option></select><span className="mt-1 block text-[9px] font-normal text-slate-400">纪念品和成就图专用，始终保持正方形。</span></label>
+              <label className="text-[10px] font-bold text-slate-400">质量<select value={imagePresetQuality} onChange={e => setImagePresetQuality(e.target.value)} className="mt-1 w-full bg-slate-100 rounded-xl px-3 py-2.5 text-xs"><option value="auto">自动</option><option value="low">低</option><option value="medium">中</option><option value="high">高</option><option value="standard">标准（DALL·E）</option><option value="hd">HD（DALL·E）</option></select></label>
               <p className="text-[10px] text-slate-400">{editingImageProfileId ? '保存后会更新这条生图方案；如果它正在使用，会立即同步到聊天。' : '这个窗口只保存生图 API，不会改变聊天 API 预设。'}</p>
           </div>
       </Modal>

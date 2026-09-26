@@ -380,7 +380,7 @@ const Live2DActionSettings: React.FC<Live2DActionSettingsProps> = ({
           </div>
         </div>
         {([
-          { key: 'scale' as const, label: '大小', min: 0.55, max: 6, step: 0.01, display: `${Math.round(framing.scale * 100)}%` },
+          { key: 'scale' as const, label: '大小', min: 0.55, max: 20, step: 0.01, display: `${framing.scale.toFixed(2)}x` },
           { key: 'offsetX' as const, label: '左右', min: -1.4, max: 1.4, step: 0.01, display: `${Math.round(framing.offsetX * 100)}` },
           { key: 'offsetY' as const, label: '上下', min: -3.2, max: 3.2, step: 0.01, display: `${Math.round(framing.offsetY * 100)}` },
         ]).map(control => (

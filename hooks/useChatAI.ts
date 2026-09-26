@@ -58,6 +58,7 @@ import { AMSG2_TOOLS, AMSG2_TOOL_NAMES, createAmsg2ToolSession, executeAmsg2Tool
 import { shouldSendThinkingParams } from '../utils/thinkingGate';
 import { buildClaudeProxyCompatibilityBody, shouldRetryClaudeProxyCompatibility } from '../utils/claudeProxyCompat';
 import { routeMiniAppToolCall } from '../utils/miniAppToolRoute';
+import { SCREEN_TIME_TOOL, executeScreenTimeTool, isScreenTimeEnabled, isScreenTimePlatform } from '../utils/screenTime';
 import { applyEmotionEvalRaw, extractAssistantText } from '../utils/emotionApply';
 import { announceChatGen, CHAT_GEN_EVENTS } from '../utils/chatGenEvents';
 import {
@@ -1182,7 +1183,8 @@ export const useChatAI = ({
             // ⚠️ 工具模式(瑞幸点单/麦当劳)下绝不带 thinking/reasoning 参数: "thinking + tools" 同发
             //    Gemini 等会直接 400 INVALID_ARGUMENT —— 表现就是"开了思考链的角色一点单就报错,
             //    换个没开思考链的角色就好"。工具循环优先, 思考链这一轮让步。
-            const toolModeActive = payload.flags.luckinChatActive || payload.flags.mcdActive || payload.flags.luckinActive || payload.flags.mcpChatActive;
+            const screenTimeToolsInjected = isScreenTimePlatform() && isScreenTimeEnabled();
+            const toolModeActive = payload.flags.luckinChatActive || payload.flags.mcdActive || payload.flags.luckinActive || payload.flags.mcpChatActive || screenTimeToolsInjected;
             // 主动消息 2.0 的工具本轮会不会注入：thinking 门要先知道这件事（工具在下面才真正
             // 拼进 tools，但参数取舍必须现在就定）。角色级开关关掉的不注入——否则被用户显式
             // 关掉的功能会被角色一次工具调用重新打开。
@@ -1234,7 +1236,7 @@ export const useChatAI = ({
                 const { tools: mcpTools, resolve } = buildMcpOpenAITools(char.id);
                 if (mcpTools.length) {
                     mcpToolResolve = resolve;
-                    const mcpOnly = !payload.flags.luckinChatActive && !payload.flags.mcdActive && !payload.flags.luckinActive;
+                    const mcpOnly = !payload.flags.luckinChatActive && !payload.flags.mcdActive && !payload.flags.luckinActive && !screenTimeToolsInjected;
                     if (!getMcpUseNativeTools() && mcpOnly) {
                         // 用户已明确判断当前模型/中转不支持 tools：首轮直接走正文兼容模式。
                         const compatibilityBody = buildMcpRejectedToolsFallbackBody({
@@ -1270,6 +1272,12 @@ export const useChatAI = ({
                     // 照常渲染——角色至少知道自己名下有哪些任务，不至于一问三不知再排一条。
                     console.warn('[amsg2] 作废回执检出失败，本轮只带进行中清单', e);
                 }
+            }
+            // Android 原生的屏幕使用时间工具只在用户主动开启后注入；网页端和未授权时
+            // 完全不暴露，避免模型误以为自己能读取手机数据。
+            if (screenTimeToolsInjected) {
+                baseReqBody.tools = [...(baseReqBody.tools || []), SCREEN_TIME_TOOL];
+                if (!baseReqBody.tool_choice) baseReqBody.tool_choice = 'auto';
             }
 
             /**
@@ -1809,7 +1817,7 @@ export const useChatAI = ({
             //       createOrder 被拦截 —— 下单付款必须用户在结账卡上点。
             //     · 通用 MCP: 工具名命中 mcpToolResolve 映射就分发给对应服务器 (utils/mcpClient),
             //       结果只回填循环不落卡片。两类工具可同时在场, 按名字各走各的。
-            if ((payload.flags.luckinChatActive || mcpToolResolve || amsg2ToolsInjected) && data.choices?.[0]?.message?.tool_calls?.length) {
+            if ((payload.flags.luckinChatActive || mcpToolResolve || amsg2ToolsInjected || screenTimeToolsInjected) && data.choices?.[0]?.message?.tool_calls?.length) {
                 // 普通点单/排程维持 6 轮；接了通用 MCP 时允许游戏/论坛类任务自然推进到
                 // 12 轮。模型正常给正文会立刻 break，并不是固定多发 12 次请求。
                 const MAX_LOOPS = mcpToolResolve ? MCP_CHAT_MAX_TOOL_LOOPS : 6;
@@ -1877,13 +1885,44 @@ export const useChatAI = ({
                             loopMessages.push(buildToolResultMessage(tc, mcpMsg) as any);
                             continue;
                         }
+                        if (fname === 'read_screen_time' && screenTimeToolsInjected) {
+                            setSearchStatus('正在读取屏幕使用时间...');
+                            let screenTimeResult: string;
+                            try { screenTimeResult = await executeScreenTimeTool(args); }
+                            catch (e: any) { screenTimeResult = `读取失败：${e?.message || String(e)}`; }
+                            // 读取本身是隐私敏感动作：在聊天记录里留一条轻量公告，
+                            // 让用户知道角色确实访问过；完整应用明细只交给角色，不重复塞进气泡。
+                            if (screenTimeResult.startsWith('统计区间：')) {
+                                const readDays = Math.max(1, Math.min(30, Math.floor(Number(args.days) || 1)));
+                                const rangeLabel = readDays === 1 ? '今天' : `最近 ${readDays} 天`;
+                                try {
+                                    await DB.saveMessage({
+                                        charId: char.id,
+                                        role: 'system',
+                                        type: 'text',
+                                        content: `[系统: 角色读取了你的屏幕使用时间（${rangeLabel}）]`,
+                                        metadata: {
+                                            screenTimeRead: true,
+                                            screenTimeDays: readDays,
+                                            screenTimeReadAt: Date.now(),
+                                        },
+                                    } as any);
+                                    setMessages(await DB.getRecentMessagesByCharId(char.id, 200));
+                                } catch (e) {
+                                    console.warn('[ScreenTime] 保存读取公告失败:', e);
+                                }
+                            }
+                            loopMessages.push(buildToolResultMessage(tc, screenTimeResult) as any);
+                            setSearchStatus('');
+                            continue;
+                        }
                         // 主动消息 2.0 工具
                         if (AMSG2_TOOL_NAMES.has(fname)) {
                             await runAmsg2ToolCall(tc, fname, args, loopMessages);
                             continue;
                         }
                         // 只开了 MCP 没开瑞幸时, 幻觉出的未知工具名直接回错误让模型自我纠正
-                        if (!payload.flags.luckinChatActive) {
+                        if (!payload.flags.luckinChatActive && !screenTimeToolsInjected) {
                             loopMessages.push(buildToolResultMessage(tc, `未知工具 ${fname}, 只能使用系统提供的工具。`) as any);
                             continue;
                         }
